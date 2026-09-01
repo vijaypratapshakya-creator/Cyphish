@@ -1,0 +1,30 @@
+services:
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    command: ["mongod", "--auth", "--bind_ip_all"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-cyphish_root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}
+      MONGO_INITDB_DATABASE: cyphish
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-cyphish_app}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Set MONGO_APP_PASSWORD in .env}
+    volumes:
+      - cyphish_mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+
+  cyphish:
+    build: .
+    image: cyphish:latest
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+    ports:
+      - "${CYPHISH_PORT:-8080}:8080"
+    env_file: .env
+    environment:
+      DB_URL: mongodb://${MONGO_APP_USERNAME:-cyphish_app}:${MONGO_APP_PASSWORD:?Set MONGO_APP_PASSWORD in .env}@mongodb:27017/cyphish?authSource=cyphish
+      PORT: 8080
+
+volumes:
+  cyphish_mongo_data:

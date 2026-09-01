@@ -1,0 +1,44 @@
+import User from '../models/User.js';
+
+export async function createUser(userData) {
+  const user = new User(userData);
+  return user.save();
+}
+
+export async function findUserById(userId) {
+  return User.findById(userId);
+}
+
+export async function findUserByUsername(username) {
+  return User.findOne({ username });
+}
+
+export async function findUserByEmail(email) {
+  return User.findOne({ email });
+}
+
+export async function findRootAdmin() {
+  return User.findOne({ isRoot: true });
+}
+
+export async function updateUser(userId, updateData) {
+  const user = await User.findById(userId);
+  if (!user) return null;
+  Object.assign(user, updateData);
+  return user.save();
+}
+
+export async function deleteUser(userId) {
+  return User.findByIdAndDelete(userId);
+}
+
+const userService = {
+  createUser,
+  findUserById,
+  findUserByUsername,
+  findUserByEmail,
+  findRootAdmin,
+  updateUser,
+  deleteUser,
+};
+export default userService; 
