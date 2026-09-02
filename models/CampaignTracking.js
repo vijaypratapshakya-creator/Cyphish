@@ -29,8 +29,32 @@ const campaignTrackingSchema = new Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'sent', 'failed', 'deferred', 'bounced', 'complained', 'disabled'],
+        enum: ['pending', 'sent', 'opened', 'clicked', 'reported', 'failed', 'deferred', 'bounced', 'complained', 'disabled'],
         default: 'pending'
+    },
+    openedAt: {
+        type: Date,
+        default: null
+    },
+    openedCount: {
+        type: Number,
+        default: 0
+    },
+    clickedAt: {
+        type: Date,
+        default: null
+    },
+    clickedCount: {
+        type: Number,
+        default: 0
+    },
+    reportedAt: {
+        type: Date,
+        default: null
+    },
+    reportedCount: {
+        type: Number,
+        default: 0
     },
     lastAttempt: {
         type: Date,
@@ -43,8 +67,8 @@ const campaignTrackingSchema = new Schema({
     error: {
         type: String,
         default: null
-    }
-    ,deliveryMessageId: { type: String, default: null },
+    },
+    deliveryMessageId: { type: String, default: null },
     deliveredAt: { type: Date, default: null },
     bounceReason: { type: String, default: null },
     complaintReason: { type: String, default: null },

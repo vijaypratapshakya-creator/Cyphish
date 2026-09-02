@@ -8,50 +8,54 @@ import path from 'path';
 import routes from './routes/index.js';
 import errorHandler from './middlewares/errorHandler.js';
 import { getClientIP } from './utils/utils.js';
+import { getMongoUri } from './utils/dbUtils.js';
+import { getSystemSettings } from './services/systemSettingService.js';
 import { startReportScheduler } from './services/reportScheduler.js';
 import { startCampaignScheduler } from './services/campaignScheduler.js';
 
-dotenv.config(); // Load environment variables
+dotenv.config();
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 
-// Validate required environment variables
+// Validate minimum required environment variables
 const validateEnvVars = () => {
-    const requiredEnvVars = ['NODE_ENV', 'DB_URL', 'ADMIN_PASSWORD', 'SESSION_SECRET'];
+    const requiredEnvVars = ['NODE_ENV', 'ADMIN_PASSWORD', 'SESSION_SECRET'];
     const missingVars = requiredEnvVars.filter((varName) => !process.env[varName]);
 
     if (missingVars.length > 0) {
-        throw new Error(`Missing required environment variable(s): ${missingVars.join(', ')}`);
+        throw new Error(`Missing required bootstrap environment variable(s): ${missingVars.join(', ')}`);
     }
 };
 
 try {
-    validateEnvVars(); // Validate environment variables
+    validateEnvVars();
 } catch (error) {
     console.error(error.message);
-    process.exit(1); // Exit process if validation fails
+    process.exit(1);
 }
 
 const app = express();
 const port = process.env.PORT || 8080;
-const db = process.env.DB_URL;
+const dbUri = getMongoUri();
 
-// Trust proxy headers to get real client IP addresses when behind a reverse proxy (e.g., Nginx, Heroku)
-app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
+// Trust proxy headers for reverse proxy setups (Nginx, ALB, Caddy)
+app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : 1);
 
 // Middlewares
 app.use(express.json({ limit: '256kb' }));
 app.use(cors({
-    origin: process.env.NODE_ENV === 'development' ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : 'http://localhost:3000',
+    origin: process.env.NODE_ENV === 'development' ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: false, // Allows flexible intranet dashboard rendering and avatars
+}));
 
 if (process.env.NODE_ENV === 'development') {
-    const sensitivePaths = ['/api/users/me/change-password', '/api/integrations/ai'];
-    const redactKeys = ['password', 'currentPassword', 'newPassword', 'apiKey'];
+    const sensitivePaths = ['/api/users/me/change-password', '/api/integrations/ai', '/api/system/settings'];
+    const redactKeys = ['password', 'currentPassword', 'newPassword', 'apiKey', 'bindPassword'];
     logger.token("body", (req) => {
         const url = (req.originalUrl || req.url || '').split('?')[0];
         if (sensitivePaths.some((p) => url.includes(p)) && req.body && typeof req.body === 'object') {
@@ -78,17 +82,21 @@ app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/build', 'index.html'));
 });
 
-// DB connection and start server
-mongoose.connect(db)
-    .then(() => {
-        console.log('Connected to MongoDB');
+// Connect to MongoDB and start background services
+mongoose.connect(dbUri)
+    .then(async () => {
+        console.log('Connected to MongoDB successfully.');
+        
+        // Initialize database-backed system settings
+        await getSystemSettings().catch((e) => console.warn('System settings init warning:', e.message));
+
         app.listen(port, () => {
-            console.log(`Server started on Port ${port}`);
+            console.log(`CyPhish server started on Port ${port}`);
             startReportScheduler();
             startCampaignScheduler();
         });
     })
-    .catch(err => {
+    .catch((err) => {
         console.error('MongoDB connection error:', err.message);
         process.exit(1);
     });

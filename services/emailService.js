@@ -2,12 +2,18 @@
 import nodemailer from 'nodemailer';
 import CampaignTracking from '../models/CampaignTracking.js';
 import { renderTemplate } from './templateService.js';
+import { getSystemSettings } from './systemSettingService.js';
 
 // Helper function to introduce delay
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const sendMultipleEmails = async (trackingEntry, senderProfile, template, timeDelay, origin) => {
     try {
+        const settings = await getSystemSettings().catch(() => null);
+        const baseUrl = (settings?.general?.publicUrl && settings.general.publicUrl.trim()) 
+            ? settings.general.publicUrl.trim().replace(/\/$/, '') 
+            : (origin || 'https://localhost').replace(/\/$/, '');
+
         // Check if SMTP authentication is required
         const authConfig = senderProfile.email && senderProfile.password ? {
             user: senderProfile.email,
@@ -29,28 +35,35 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             throw new Error("Template content is missing.");
         }
 
-        // Dynamic Link Construction
-        const url = new URL('/training/warning', origin);
-        url.searchParams.set('id', trackingEntry.shortId);
-        url.searchParams.set('src', 'email');
-        const link = url.toString();
+        // Dynamic Warning and Report Link Construction
+        const link = `${baseUrl}/training/warning?id=${trackingEntry.shortId}&src=email`;
+        const reportLink = `${baseUrl}/api/tracking/report/${trackingEntry.shortId}`;
 
         // Prepare placeholders for email template
         const placeholders = {
-            firstName: trackingEntry.contact.firstName,
-            lastName: trackingEntry.contact.lastName,
-            email: trackingEntry.contact.email,
-            phoneNumber: trackingEntry.contact.phoneNumber,
-            role: trackingEntry.contact.role,
-            country: trackingEntry.contact.country,
+            firstName: contact.firstName || '',
+            lastName: contact.lastName || '',
+            email: contact.email || trackingEntry.email,
+            phoneNumber: contact.phoneNumber || '',
+            role: contact.role || '',
+            country: contact.country || '',
             link,
+            reportLink,
             // Add metadata fields if they exist
-            department: trackingEntry.contact.metadata?.get('department') || '',
-            company: trackingEntry.contact.metadata?.get('company') || ''
+            department: contact.department || contact.metadata?.get?.('department') || '',
+            company: contact.company || contact.metadata?.get?.('company') || ''
         };
 
         // Render email body directly from the passed template object and contact data
-        const emailBody = renderTemplate(template.htmlContent, placeholders);
+        let emailBody = renderTemplate(template.htmlContent, placeholders);
+
+        // Append invisible 1x1 open tracking pixel
+        const openTrackingPixel = `<img src="${baseUrl}/api/tracking/open/${trackingEntry.shortId}" width="1" height="1" alt="" style="display:none !important; width:1px; height:1px; opacity:0;" />`;
+        if (emailBody.includes('</body>')) {
+            emailBody = emailBody.replace('</body>', `${openTrackingPixel}</body>`);
+        } else {
+            emailBody = `${emailBody}${openTrackingPixel}`;
+        }
 
         // Regular expression to validate email format
         const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -63,7 +76,11 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             from: `${senderProfile.senderName} <${fromAddress}>`,
             to: trackingEntry.email,
             subject: template.subject,
-            html: emailBody
+            html: emailBody,
+            headers: {
+                'X-CyPhish-Simulation': 'true',
+                'X-Phish-Report-URL': reportLink
+            }
         };
 
         // Send the email
@@ -73,6 +90,7 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
         await CampaignTracking.findByIdAndUpdate(trackingEntry._id, {
             status: 'sent',
             lastAttempt: new Date(),
+            deliveredAt: new Date(),
             attemptCount: trackingEntry.attemptCount + 1,
             error: null // Clear any previous error
         });

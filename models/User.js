@@ -7,7 +7,7 @@ const UserSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email: { type: String, unique: true },
   password: { type: String, required: true }, // hashed
-  role: { type: String, enum: ['admin', 'user'], default: 'user' },
+  role: { type: String, enum: ['admin', 'campaign_manager', 'viewer', 'user'], default: 'admin' },
   accountLocked: { type: Boolean, default: false },
   isRoot: { type: Boolean, default: false },
 }, { timestamps: true });
@@ -30,4 +30,4 @@ UserSchema.methods.comparePassword = function(candidatePassword) {
 };
 
 const User = mongoose.model('User', UserSchema);
-export default User; 
+export default User;

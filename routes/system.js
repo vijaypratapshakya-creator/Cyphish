@@ -1,12 +1,18 @@
 import express from 'express';
 import systemController from '../controllers/systemController.js';
+import authMiddleware from '../middlewares/authMiddleware.js';
+import requireAdmin from '../middlewares/requireAdmin.js';
 
 const router = express.Router();
 
-// Public: Check if system is initialized (root admin exists)
+// Public endpoints
 router.get('/setup-status', systemController.setupStatus);
-
-// Public: Health check
 router.get('/health', systemController.healthCheck);
 
-export default router; 
+// Protected Admin endpoints
+router.get('/settings', authMiddleware, requireAdmin, systemController.getSettings);
+router.put('/settings', authMiddleware, requireAdmin, systemController.updateSettings);
+router.post('/reports/test', authMiddleware, requireAdmin, systemController.sendTestReport);
+router.get('/stats', authMiddleware, requireAdmin, systemController.getSystemStats);
+
+export default router;

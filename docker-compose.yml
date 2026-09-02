@@ -19,12 +19,28 @@ services:
     restart: unless-stopped
     depends_on:
       - mongodb
-    ports:
-      - "${CYPHISH_PORT:-8080}:8080"
     env_file: .env
     environment:
-      DB_URL: mongodb://${MONGO_APP_USERNAME:-cyphish_app}:${MONGO_APP_PASSWORD:?Set MONGO_APP_PASSWORD in .env}@mongodb:27017/cyphish?authSource=cyphish
+      NODE_ENV: production
       PORT: 8080
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_DATABASE: cyphish
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-cyphish_app}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Set MONGO_APP_PASSWORD in .env}
+      TRUST_PROXY: "true"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    depends_on:
+      - cyphish
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
 
 volumes:
   cyphish_mongo_data:
