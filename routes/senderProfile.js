@@ -4,28 +4,25 @@ import {
     getAllSenderProfiles,
     getSenderProfileById,
     updateSenderProfile,
-    deleteSenderProfile
+    deleteSenderProfile,
+    testConnection,
 } from '../controllers/senderProfileController.js';
 import authMiddleware from '../middlewares/authMiddleware.js';
-import requireAdmin from '../middlewares/requireAdmin.js';
+import { requireRoles } from '../middlewares/requireAdmin.js';
 
 const router = express.Router();
 
-// Protect routes with authMiddleware
 router.use(authMiddleware);
-router.use(requireAdmin);
+router.use(requireRoles(['admin', 'campaign_manager']));
 
-// Create
-router.post('/', createSenderProfile);
+// Test connection & TLS handshake
+router.post('/test-connection', testConnection);
 
-// Read
+// CRUD
 router.get('/', getAllSenderProfiles);
 router.get('/:id', getSenderProfileById);
-
-// Update
+router.post('/', createSenderProfile);
 router.put('/:id', updateSenderProfile);
-
-// Delete
 router.delete('/:id', deleteSenderProfile);
 
 export default router;

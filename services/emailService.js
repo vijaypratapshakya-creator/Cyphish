@@ -5,7 +5,63 @@ import { renderTemplate } from './templateService.js';
 import { getSystemSettings } from './systemSettingService.js';
 
 // Helper function to introduce delay
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Creates a configured Nodemailer transport with TLS and Custom CA support
+ */
+export const buildSmtpTransporter = (senderProfile) => {
+    const authConfig = senderProfile.email && senderProfile.password ? {
+        user: senderProfile.email,
+        pass: senderProfile.password,
+    } : undefined;
+
+    const encryptionMode = senderProfile.encryptionMode || (senderProfile.secure ? 'smtps_direct' : 'starttls_strict');
+
+    const tlsOptions = {
+        minVersion: senderProfile.minTlsVersion || 'TLSv1.2',
+        rejectUnauthorized: !senderProfile.ignoreTlsCertificateErrors,
+    };
+
+    if (senderProfile.customCaCertificate && senderProfile.customCaCertificate.trim()) {
+        tlsOptions.ca = [senderProfile.customCaCertificate.trim()];
+    }
+
+    return nodemailer.createTransport({
+        host: senderProfile.host,
+        port: Number(senderProfile.port),
+        secure: encryptionMode === 'smtps_direct',
+        requireTLS: encryptionMode === 'starttls_strict',
+        ignoreTLS: encryptionMode === 'none',
+        tls: tlsOptions,
+        auth: authConfig,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+    });
+};
+
+/**
+ * Live test SMTP connection and TLS handshake
+ */
+export const verifySmtpConnection = async (senderProfile) => {
+    const transporter = buildSmtpTransporter(senderProfile);
+    try {
+        const verifyResult = await transporter.verify();
+        return {
+            success: true,
+            message: `SMTP Connection & TLS handshake to ${senderProfile.host}:${senderProfile.port} succeeded.`,
+            details: verifyResult,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            message: error.message || 'SMTP connection verification failed.',
+            code: error.code,
+            command: error.command,
+        };
+    }
+};
 
 export const sendMultipleEmails = async (trackingEntry, senderProfile, template, timeDelay, origin) => {
     try {
@@ -14,22 +70,11 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             ? settings.general.publicUrl.trim().replace(/\/$/, '') 
             : (origin || 'https://localhost').replace(/\/$/, '');
 
-        // Check if SMTP authentication is required
-        const authConfig = senderProfile.email && senderProfile.password ? {
-            user: senderProfile.email,
-            pass: senderProfile.password
-        } : null;
-
-        // Create SMTP transporter
-        const transporter = nodemailer.createTransport({
-            host: senderProfile.host,
-            port: senderProfile.port,
-            secure: senderProfile.secure, // true for 465, false for other ports
-            auth: authConfig
-        });
+        // Create SMTP transporter with dynamic TLS and Exchange CA support
+        const transporter = buildSmtpTransporter(senderProfile);
 
         // Fetch contact data
-        const contact = trackingEntry.contact;
+        const contact = trackingEntry.contact || {};
 
         if (!template.htmlContent) {
             throw new Error("Template content is missing.");
@@ -39,7 +84,7 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
         const link = `${baseUrl}/training/warning?id=${trackingEntry.shortId}&src=email`;
         const reportLink = `${baseUrl}/api/tracking/report/${trackingEntry.shortId}`;
 
-        // Prepare placeholders for email template
+        // Prepare placeholders for email template (supports both CyPhish and GoPhish syntax)
         const placeholders = {
             firstName: contact.firstName || '',
             lastName: contact.lastName || '',
@@ -49,9 +94,11 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             country: contact.country || '',
             link,
             reportLink,
-            // Add metadata fields if they exist
-            department: contact.department || contact.metadata?.get?.('department') || '',
-            company: contact.company || contact.metadata?.get?.('company') || ''
+            trackingUrl: link,
+            department: contact.department || 'General',
+            ou: contact.ou || '',
+            team: contact.teamName || '',
+            company: contact.company || '',
         };
 
         // Render email body directly from the passed template object and contact data
@@ -65,13 +112,9 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             emailBody = `${emailBody}${openTrackingPixel}`;
         }
 
-        // Regular expression to validate email format
         const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-
-        // Check if senderProfile.email is a valid email; if not, use a default or handle the error
         const fromAddress = isValidEmail(senderProfile.email) ? senderProfile.email : "no-reply@mail.com";
 
-        // Email options
         const mailOptions = {
             from: `${senderProfile.senderName} <${fromAddress}>`,
             to: trackingEntry.email,
@@ -79,8 +122,8 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             html: emailBody,
             headers: {
                 'X-CyPhish-Simulation': 'true',
-                'X-Phish-Report-URL': reportLink
-            }
+                'X-Phish-Report-URL': reportLink,
+            },
         };
 
         // Send the email
@@ -92,24 +135,24 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             lastAttempt: new Date(),
             deliveredAt: new Date(),
             attemptCount: trackingEntry.attemptCount + 1,
-            error: null // Clear any previous error
+            error: null,
         });
 
         console.log(`Email successfully sent to: ${trackingEntry.email}`);
 
         // Wait for timeDelay if set
-        if (timeDelay) {
+        if (timeDelay && timeDelay > 0) {
             await delay(timeDelay * 1000);
-            console.log(`Next batch in ${timeDelay}s`);
         }
     } catch (error) {
-        // Update CampaignTracking status to "failed" and log error message
-        console.error(`Error sending email to: ${trackingEntry.email} - ${error.message}`);
+        console.error(`Error sending email to ${trackingEntry.email}:`, error.message);
+
+        // Record error on tracking entry
         await CampaignTracking.findByIdAndUpdate(trackingEntry._id, {
-            status: 'failed',
             lastAttempt: new Date(),
             attemptCount: trackingEntry.attemptCount + 1,
-            error: error.message
+            error: error.message,
         });
+        throw error;
     }
 };

@@ -15,7 +15,23 @@ const templateSchema = new Schema({
     type: {
         type: String,
         required: true,
-        trim: true
+        trim: true,
+        default: 'custom',
+    },
+    category: {
+        type: String,
+        trim: true,
+        default: 'IT & Security',
+    },
+    difficulty: {
+        type: Number,
+        min: 1,
+        max: 5,
+        default: 3,
+    },
+    tags: {
+        type: [String],
+        default: ['Phishing Drill'],
     },
     htmlContent: {
         type: String,
@@ -23,7 +39,7 @@ const templateSchema = new Schema({
     },
     sourceFormat: {
         type: String,
-        enum: ['html', 'markdown'],
+        enum: ['html', 'markdown', 'raw_eml'],
         default: 'html',
     },
     markdownContent: {

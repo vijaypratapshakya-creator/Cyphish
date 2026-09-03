@@ -1,179 +1,215 @@
 import React, { useState } from 'react';
 import {
-    Box, Typography, Container, TextField, Button, Grid, Link,
-    Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle
+  Box,
+  Typography,
+  Container,
+  TextField,
+  Button,
+  Grid,
+  Card,
+  CardContent,
+  CircularProgress,
+  Alert,
+  IconButton,
+  Divider,
 } from '@mui/material';
+import {
+  ArrowBack as ArrowBackIcon,
+  CloudUpload as CloudUploadIcon,
+  GroupAdd as GroupAddIcon,
+  CheckCircle as CheckCircleIcon,
+} from '@mui/icons-material';
 import Sidebar from '../../components/Sidebar';
 import Footer from '../../components/Footer';
-import { useNavigate } from 'react-router-dom'; // For redirection
+import { useNavigate } from 'react-router-dom';
 import { useAudience } from '../../hooks/useAudience';
 
 const CreateAudience = () => {
-    const [audienceName, setAudienceName] = useState('');
-    const [file, setFile] = useState(null);
-    const [errorDialog, setErrorDialog] = useState(false);
-    const [successDialog, setSuccessDialog] = useState(false);
-    const [validationError, setValidationError] = useState({ name: false, file: false });
-    const { createAudience, loading, error } = useAudience();
-    const navigate = useNavigate();
+  const [audienceName, setAudienceName] = useState('');
+  const [file, setFile] = useState(null);
+  const [validationError, setValidationError] = useState(false);
+  const { createAudience, loading, error } = useAudience();
+  const navigate = useNavigate();
 
-    const handleFileChange = (e) => {
-        setFile(e.target.files[0]);
-    };
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+  const handleFileChange = (e) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
 
-        // Reset validation errors
-        setValidationError({ name: false, file: false });
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!audienceName.trim()) {
+      setValidationError(true);
+      return;
+    }
 
-        // Validate input fields - only audience name is required
-        if (!audienceName) {
-            setValidationError({
-                name: !audienceName,
-                file: false,
-            });
-            return;
-        }
+    const formData = new FormData();
+    formData.append('name', audienceName.trim());
+    if (file) {
+      formData.append('file', file);
+    }
 
-        const formData = new FormData();
-        formData.append('name', audienceName);
-        if (file) {
-            formData.append('file', file);
-        }
+    const response = await createAudience(formData);
+    if (response.success) {
+      navigate(`/console/audience/${response.data._id}`);
+    }
+  };
 
-        // Call the createAudience function from the hook
-        const response = await createAudience(formData);
-        if (response.success) {
-            const audienceId = response.data._id; // Get the ID from the response data
-            setSuccessDialog(true); // Show success dialog
-            setAudienceName(''); // Clear the form data
-            setFile(null);
-            navigate(`/console/audience/${audienceId}`); // Redirect to detail page of the new audience
-        } else {
-            setErrorDialog(true); // Show error dialog
-        }
-    };
-
-    const handleErrorClose = () => {
-        setErrorDialog(false);
-    };
-
-    return (
-        <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: "#fafafa" }}>
-            <Sidebar />
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-                <Container maxWidth="lg" sx={{ flexGrow: 1, mt: '110px', mb: 2 }}>
-                    <Grid container spacing={2} sx={{ mb: 2 }}>
-                        <Grid sx={{ pl: 2, pb: 2 }} xs={12} md={8} lg={8}>
-                            <Typography 
-                                sx={{ 
-                                    mb: 1, 
-                                    fontWeight: 500,
-                                    background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
-                                    backgroundClip: 'text',
-                                    WebkitBackgroundClip: 'text',
-                                    WebkitTextFillColor: 'transparent',
-                                    fontSize: { xs: '1.2rem', md: '1.8rem' }
-                                }} 
-                                variant="h4" 
-                                color="primary"
-                            >
-                                Create a New Audience
-                            </Typography>
-                            <Typography sx={{ fontSize: 13 }} color="text.secondary">
-                                Define your audience and optionally upload a CSV file with their contact information.
-                            </Typography>
-                        </Grid>
-                    </Grid>
-
-                    <form onSubmit={handleSubmit}>
-                        <Grid container spacing={3}>
-                            {/* Audience Name */}
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Audience Name"
-                                    variant="outlined"
-                                    value={audienceName}
-                                    onChange={(e) => setAudienceName(e.target.value)}
-                                    required
-                                    error={validationError.name} // Set error state if name is missing
-                                    helperText={validationError.name ? "Audience name is required" : "Enter a name for your audience."}
-                                    sx={{
-                                        '& .MuiInputLabel-root': {
-                                            '& .MuiInputLabel-asterisk': {
-                                                color: 'error.main',
-                                            },
-                                        },
-                                    }}
-                                />
-                            </Grid>
-
-                            {/* Instructions */}
-                            <Grid item xs={12}>
-                                <Typography variant="body1" sx={{ mb: 1 }}>
-                                    Optionally upload a CSV file with the required fields: <strong>First Name</strong> and <strong>Email</strong>.
-                                    If no first name is available, use generic values like <strong>"user"</strong> or <strong>"employee"</strong>.
-                                    You can also create an empty audience and add contacts manually later.
-                                </Typography>
-                                <Typography variant="body1" sx={{ mb: 2 }}>
-                                    <Link href="/sample-contacts.csv" sx={{ color: '#00bfff' }}>Download a sample CSV file</Link> to see the expected format.
-                                </Typography>
-                            </Grid>
-
-                            {/* File Upload */}
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    type="file"
-                                    onChange={handleFileChange}
-                                    inputProps={{ accept: '.csv' }}
-                                    helperText="Upload a CSV file with your audience's contacts (optional)."
-                                />
-                            </Grid>
-
-                            {/* Submit Button */}
-                            <Grid item xs={12}>
-                                <Button type="submit" variant="contained" color="primary" disabled={loading}>
-                                    {loading ? 'Creating...' : 'Create Audience'}
-                                </Button>
-                            </Grid>
-                        </Grid>
-                    </form>
-                </Container>
-                <Footer />
+  return (
+    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0b0f19' }}>
+      <Sidebar />
+      <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
+        <Container maxWidth="md" sx={{ flexGrow: 1, mt: '80px', mb: 4, px: { xs: 2, sm: 3 } }}>
+          
+          {/* Header */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <IconButton
+              onClick={() => navigate('/console/audience')}
+              sx={{ color: '#94a3b8', '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' } }}
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#f8fafc', fontSize: { xs: '1.3rem', md: '1.6rem' } }}>
+                Create Target Audience Group
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                Define a recipient group and optionally upload employee lists with names, emails, and departments.
+              </Typography>
             </Box>
+          </Box>
 
-            {/* Success Dialog */}
-            <Dialog open={successDialog} onClose={() => setSuccessDialog(false)}>
-                <DialogTitle>Success</DialogTitle>
-                <DialogContent>
-                    <DialogContentText>
-                        Your audience has been successfully created!
-                        You can now view the details of the audience by navigating to the audience details page.
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={() => setSuccessDialog(false)} color="primary">
-                        View Details
-                    </Button>
-                </DialogActions>
-            </Dialog>
+          {error && (
+            <Alert severity="error" sx={{ mb: 3, bgcolor: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              {error}
+            </Alert>
+          )}
 
-            {/* Error Dialog */}
-            <Dialog open={errorDialog} onClose={handleErrorClose}>
-                <DialogTitle>Error</DialogTitle>
-                <DialogContent>
-                    <DialogContentText style={{ whiteSpace: 'pre-wrap' }}>
-                        {error || "There was an error creating the audience. Please try again."}
-                    </DialogContentText>
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={handleErrorClose} color="primary">Close</Button>
-                </DialogActions>
-            </Dialog>
-        </Box>
-    );
+          <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+            <CardContent sx={{ p: 4 }}>
+              <form onSubmit={handleSubmit}>
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <GroupAddIcon sx={{ color: '#3b82f6' }} /> Group Details
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    label="Audience Group Name"
+                    placeholder="e.g. Q3 All-Hands Drill or Finance Dept Targets"
+                    value={audienceName}
+                    onChange={(e) => {
+                      setAudienceName(e.target.value);
+                      if (validationError) setValidationError(false);
+                    }}
+                    error={validationError}
+                    helperText={validationError ? 'Audience name is required' : ''}
+                    required
+                  />
+                </Box>
+
+                <Divider sx={{ my: 3, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
+
+                {/* CSV Upload Section */}
+                <Box sx={{ mb: 4 }}>
+                  <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.5 }}>
+                    Import Target Contacts (Optional CSV)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+                    Upload a CSV file containing columns: <code>Email</code>, <code>First Name</code>, <code>Last Name</code>, <code>Department</code>, <code>OU</code>, <code>Role</code>.
+                  </Typography>
+
+                  <Box
+                    sx={{
+                      border: '2px dashed rgba(59, 130, 246, 0.3)',
+                      borderRadius: '12px',
+                      p: 4,
+                      textAlign: 'center',
+                      bgcolor: file ? 'rgba(16, 185, 129, 0.05)' : 'rgba(59, 130, 246, 0.02)',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        borderColor: '#3b82f6',
+                        bgcolor: 'rgba(59, 130, 246, 0.05)',
+                      },
+                    }}
+                  >
+                    {file ? (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                        <CheckCircleIcon sx={{ fontSize: 40, color: '#10b981' }} />
+                        <Typography variant="body1" sx={{ color: '#f8fafc', fontWeight: 600 }}>
+                          {file.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                          ({(file.size / 1024).toFixed(1)} KB)
+                        </Typography>
+                        <Button
+                          size="small"
+                          onClick={() => setFile(null)}
+                          sx={{ color: '#ef4444', textTransform: 'none', mt: 1 }}
+                        >
+                          Remove File
+                        </Button>
+                      </Box>
+                    ) : (
+                      <Box>
+                        <CloudUploadIcon sx={{ fontSize: 48, color: '#64748b', mb: 1 }} />
+                        <Typography variant="body1" sx={{ color: '#f8fafc', fontWeight: 600, mb: 0.5 }}>
+                          Drag and drop your employee CSV here
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+                          or browse from your local files
+                        </Typography>
+                        <Button
+                          component="label"
+                          variant="outlined"
+                          sx={{
+                            borderColor: 'rgba(59, 130, 246, 0.5)',
+                            color: '#60a5fa',
+                            fontWeight: 600,
+                            '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.1)', borderColor: '#3b82f6' },
+                          }}
+                        >
+                          Select CSV File
+                          <input type="file" accept=".csv" hidden onChange={handleFileChange} />
+                        </Button>
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                  <Button
+                    onClick={() => navigate('/console/audience')}
+                    sx={{ color: '#94a3b8' }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={loading}
+                    sx={{
+                      bgcolor: '#3b82f6',
+                      color: '#fff',
+                      fontWeight: 700,
+                      px: 3.5,
+                      py: 1,
+                      borderRadius: '10px',
+                      '&:hover': { bgcolor: '#2563eb' },
+                    }}
+                  >
+                    {loading ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : 'Create Audience'}
+                  </Button>
+                </Box>
+              </form>
+            </CardContent>
+          </Card>
+
+        </Container>
+        <Footer />
+      </Box>
+    </Box>
+  );
 };
 
 export default CreateAudience;

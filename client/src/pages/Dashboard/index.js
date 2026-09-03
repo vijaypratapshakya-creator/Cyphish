@@ -3,7 +3,6 @@ import {
   Typography,
   Container,
   Grid,
-  Paper,
   Box,
   Card,
   CardContent,
@@ -16,20 +15,16 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  LinearProgress,
+  Tabs,
+  Tab,
+  Rating,
 } from '@mui/material';
 import {
-  Campaign as CampaignIcon,
-  People as PeopleIcon,
-  Outbox as OutboxIcon,
-  Email as EmailIcon,
-  Settings as SettingsIcon,
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   Shield as ShieldIcon,
-  CheckCircle as CheckCircleIcon,
   Send as SendIcon,
-  Assessment as AssessmentIcon,
+  Star as StarIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
@@ -62,26 +57,35 @@ ChartJS.register(
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [selectedRangeDays, setSelectedRangeDays] = useState(30);
-  const { dashboardData, timelineData, riskData, systemStats } = useDashboard(selectedRangeDays);
+  const [selectedRangeDays, setSelectedRangeDays] = useState(180); // 180-day default retention window
+  const [activeTab, setActiveTab] = useState(0); // 0: Departments, 1: Campaigns, 2: Templates, 3: Users
+
+  const {
+    dashboardData,
+    timelineData,
+    riskData,
+    campaignAnalytics,
+    templateAnalytics,
+    userAnalytics,
+  } = useDashboard(selectedRangeDays);
 
   const getScoreColor = (score) => {
-    if (score >= 80) return '#059669'; // Emerald
-    if (score >= 60) return '#2563eb'; // Blue
-    if (score >= 40) return '#d97706'; // Amber
-    return '#dc2626'; // Red
+    if (score >= 80) return '#10b981'; // Cyber Emerald
+    if (score >= 60) return '#3b82f6'; // Cobalt
+    if (score >= 40) return '#f59e0b'; // Amber
+    return '#ef4444'; // Threat Red
   };
 
   const getRiskChip = (level) => {
     switch (level) {
       case 'Critical':
-        return <Chip size="small" label="Critical Risk" sx={{ bgcolor: '#fef2f2', color: '#991b1b', fontWeight: 700, border: '1px solid #fecaca' }} />;
+        return <Chip size="small" label="Critical Risk" sx={{ bgcolor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 700, border: '1px solid rgba(239, 68, 68, 0.4)' }} />;
       case 'High':
-        return <Chip size="small" label="High Risk" sx={{ bgcolor: '#fffbeb', color: '#92400e', fontWeight: 700, border: '1px solid #fde68a' }} />;
+        return <Chip size="small" label="High Risk" sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 700, border: '1px solid rgba(245, 158, 11, 0.4)' }} />;
       case 'Moderate':
-        return <Chip size="small" label="Moderate" sx={{ bgcolor: '#eff6ff', color: '#1e40af', fontWeight: 600, border: '1px solid #bfdbfe' }} />;
+        return <Chip size="small" label="Moderate" sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 600, border: '1px solid rgba(59, 130, 246, 0.4)' }} />;
       default:
-        return <Chip size="small" label="Low Risk" sx={{ bgcolor: '#ecfdf5', color: '#065f46', fontWeight: 600, border: '1px solid #a7f3d0' }} />;
+        return <Chip size="small" label="Low Risk" sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 600, border: '1px solid rgba(16, 185, 129, 0.4)' }} />;
     }
   };
 
@@ -92,418 +96,441 @@ const Dashboard = () => {
       legend: {
         position: 'top',
         labels: {
+          color: '#94a3b8',
           font: { family: 'Montserrat', size: 12, weight: 600 },
           usePointStyle: true,
           padding: 16,
         },
       },
       tooltip: {
-        backgroundColor: '#0f172a',
+        backgroundColor: '#111827',
+        titleColor: '#f8fafc',
+        bodyColor: '#cbd5e1',
+        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
         padding: 12,
-        cornerRadius: 8,
-        titleFont: { family: 'Montserrat', weight: 700 },
-        bodyFont: { family: 'Montserrat' },
+        boxPadding: 6,
       },
     },
     scales: {
+      x: {
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: { color: '#64748b', font: { family: 'Montserrat', size: 11 } },
+      },
       y: {
         beginAtZero: true,
-        grid: { color: '#f1f5f9' },
-        ticks: { stepSize: 1, font: { family: 'Montserrat', size: 11 } },
-      },
-      x: {
-        grid: { display: false },
-        ticks: { font: { family: 'Montserrat', size: 11 } },
+        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+        ticks: { color: '#64748b', font: { family: 'Montserrat', size: 11 } },
       },
     },
   };
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0b0f19' }}>
       <Sidebar />
-
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-        <Container maxWidth="xl" sx={{ flexGrow: 1, mt: '88px', mb: 4, px: { xs: 2, md: 4 } }}>
+        <Container maxWidth="xl" sx={{ flexGrow: 1, mt: '80px', mb: 4, px: { xs: 2, sm: 3 } }}>
           
-          {/* Header & Date Filter Bar */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2, mb: 3 }}>
-            <div>
-              <Typography variant="h4" sx={{ fontWeight: 700, color: '#0f172a', fontSize: { xs: '1.4rem', md: '1.75rem' } }}>
-                Executive Awareness Dashboard
+          {/* Header & 180-Day Range Selector */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography
+                variant="h4"
+                sx={{
+                  fontWeight: 700,
+                  color: '#f8fafc',
+                  fontSize: { xs: '1.4rem', md: '1.8rem' },
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                }}
+              >
+                <ShieldIcon sx={{ color: '#3b82f6', fontSize: '2rem' }} />
+                Cyber Command & Telemetry Dashboard
               </Typography>
-              <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-                Real-time phishing resilience metrics, threat simulation activity, and departmental vulnerability posture.
+              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
+                Real-time threat susceptibility telemetry with 180-day retention analysis.
               </Typography>
-            </div>
+            </Box>
 
-            <ButtonGroup variant="outlined" size="small" sx={{ bgcolor: '#ffffff', borderRadius: '10px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-              {[
-                { label: '7 Days', value: 7 },
-                { label: '30 Days', value: 30 },
-                { label: '90 Days', value: 90 },
-                { label: '6 Months', value: 180 },
-              ].map((item) => (
+            {/* Range Toggle */}
+            <ButtonGroup size="small" sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', p: 0.5 }}>
+              {[7, 30, 90, 180].map((d) => (
                 <Button
-                  key={item.value}
-                  onClick={() => setSelectedRangeDays(item.value)}
-                  variant={selectedRangeDays === item.value ? 'contained' : 'outlined'}
+                  key={d}
+                  onClick={() => setSelectedRangeDays(d)}
+                  variant={selectedRangeDays === d ? 'contained' : 'text'}
                   sx={{
-                    px: 2,
-                    py: 0.8,
+                    bgcolor: selectedRangeDays === d ? '#3b82f6' : 'transparent',
+                    color: selectedRangeDays === d ? '#ffffff' : '#94a3b8',
                     fontWeight: 600,
                     fontSize: '0.8rem',
-                    bgcolor: selectedRangeDays === item.value ? '#1d4ed8' : 'transparent',
-                    color: selectedRangeDays === item.value ? '#ffffff' : '#475569',
-                    borderColor: '#cbd5e1',
-                    '&:hover': {
-                      bgcolor: selectedRangeDays === item.value ? '#1e40af' : '#f1f5f9',
-                    },
+                    borderRadius: '8px !important',
+                    px: 1.8,
+                    '&:hover': { bgcolor: selectedRangeDays === d ? '#2563eb' : 'rgba(255, 255, 255, 0.05)' },
                   }}
                 >
-                  {item.label}
+                  {d === 180 ? '180d (Max Retention)' : `${d}d`}
                 </Button>
               ))}
             </ButtonGroup>
           </Box>
 
-          {/* Operational Readiness Bar */}
-          {systemStats && (
-            <Paper sx={{ p: 2, mb: 3, borderRadius: '14px', bgcolor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} sm={6} md={3}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <CheckCircleIcon sx={{ color: systemStats.counts.totalProfiles > 0 ? '#059669' : '#d97706', fontSize: 20 }} />
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" fontWeight={600}>SMTP RELAY</Typography>
-                      <Typography variant="body2" fontWeight={700} color="#0f172a">
-                        {systemStats.counts.totalProfiles > 0 ? `${systemStats.counts.totalProfiles} Profile(s) Ready` : 'No Profile Set'}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Grid>
-
-                <Grid item xs={12} sm={6} md={3}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <CheckCircleIcon sx={{ color: systemStats.system.ldapConfigured ? '#059669' : '#94a3b8', fontSize: 20 }} />
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" fontWeight={600}>ACTIVE DIRECTORY</Typography>
-                      <Typography variant="body2" fontWeight={700} color="#0f172a">
-                        {systemStats.system.ldapConfigured ? 'Directory Connected' : 'LDAP Disabled'}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Grid>
-
-                <Grid item xs={12} sm={6} md={3}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <CheckCircleIcon sx={{ color: systemStats.system.reportingConfigured ? '#059669' : '#94a3b8', fontSize: 20 }} />
-                    <Box>
-                      <Typography variant="caption" color="text.secondary" fontWeight={600}>SCHEDULED REPORTS</Typography>
-                      <Typography variant="body2" fontWeight={700} color="#0f172a">
-                        {systemStats.system.reportingConfigured ? 'Automated Dispatch Active' : 'Reports Not Configured'}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </Grid>
-
-                <Grid item xs={12} sm={6} md={3} sx={{ textAlign: { sm: 'right' } }}>
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<SettingsIcon />}
-                    onClick={() => navigate('/console/settings')}
-                    sx={{ borderRadius: '8px', fontWeight: 600, fontSize: '0.78rem' }}
-                  >
-                    Manage Settings
-                  </Button>
-                </Grid>
-              </Grid>
-            </Paper>
-          )}
-
-          {/* KPI Stat Cards Grid */}
+          {/* Top Metric Cards */}
           <Grid container spacing={2.5} sx={{ mb: 3 }}>
-            {/* Posture Score Card */}
+            
+            {/* Simulations Delivered */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', bgcolor: getScoreColor(dashboardData.awarenessScore) }} />
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Awareness Score
-                      </Typography>
-                      <Typography variant="h3" sx={{ fontWeight: 800, color: '#0f172a', mt: 1 }}>
-                        {dashboardData.awarenessScore}<Typography component="span" variant="h6" sx={{ color: '#64748b' }}>/100</Typography>
-                      </Typography>
-                    </div>
-                    <Box sx={{ p: 1.5, borderRadius: '12px', bgcolor: `${getScoreColor(dashboardData.awarenessScore)}15` }}>
-                      <ShieldIcon sx={{ color: getScoreColor(dashboardData.awarenessScore), fontSize: 28 }} />
-                    </Box>
-                  </Box>
-                  <Box sx={{ mt: 2 }}>
-                    <LinearProgress
-                      variant="determinate"
-                      value={dashboardData.awarenessScore}
-                      sx={{
-                        height: 6,
-                        borderRadius: 3,
-                        bgcolor: '#f1f5f9',
-                        '& .MuiLinearProgress-bar': { bgcolor: getScoreColor(dashboardData.awarenessScore) },
-                      }}
-                    />
-                    <Typography variant="caption" sx={{ color: '#64748b', mt: 1, display: 'block' }}>
-                      {dashboardData.awarenessScore >= 75 ? '🟢 High Organizational Resilience' : '🟠 Moderate - Training Recommended'}
+              <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Simulations Sent
                     </Typography>
+                    <SendIcon sx={{ color: '#3b82f6', fontSize: 20 }} />
                   </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Click-Through Rate (CTR) Card */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', bgcolor: '#dc2626' }} />
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Simulation Click Rate
-                      </Typography>
-                      <Typography variant="h3" sx={{ fontWeight: 800, color: '#dc2626', mt: 1 }}>
-                        {dashboardData.clickRate}%
-                      </Typography>
-                    </div>
-                    <Box sx={{ p: 1.5, borderRadius: '12px', bgcolor: '#fee2e2' }}>
-                      <TrendingDownIcon sx={{ color: '#dc2626', fontSize: 28 }} />
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" sx={{ color: '#64748b', mt: 2 }}>
-                    <strong>{dashboardData.totalClicks || dashboardData.usersClicked}</strong> clicks logged across <strong>{dashboardData.simulationsSent}</strong> emails.
+                  <Typography variant="h4" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.5 }}>
+                    {dashboardData?.simulationsSent?.toLocaleString() || 0}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    Across {dashboardData?.totalCampaigns || 0} total campaigns
                   </Typography>
                 </CardContent>
               </Card>
             </Grid>
 
-            {/* Phish Reporting Rate Card */}
+            {/* Click Rate */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', bgcolor: '#059669' }} />
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Reporting Rate
-                      </Typography>
-                      <Typography variant="h3" sx={{ fontWeight: 800, color: '#059669', mt: 1 }}>
-                        {dashboardData.reportRate}%
-                      </Typography>
-                    </div>
-                    <Box sx={{ p: 1.5, borderRadius: '12px', bgcolor: '#dcfce7' }}>
-                      <TrendingUpIcon sx={{ color: '#059669', fontSize: 28 }} />
-                    </Box>
+              <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Phish Click Rate
+                    </Typography>
+                    <TrendingDownIcon sx={{ color: '#ef4444', fontSize: 20 }} />
                   </Box>
-                  <Typography variant="body2" sx={{ color: '#64748b', mt: 2 }}>
-                    <strong>{dashboardData.usersReported}</strong> simulation emails reported by employees.
+                  <Typography variant="h4" sx={{ color: '#f87171', fontWeight: 700, mb: 0.5 }}>
+                    {dashboardData?.clickRate || 0}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    {dashboardData?.usersClicked || 0} unique compromised clicks
                   </Typography>
                 </CardContent>
               </Card>
             </Grid>
 
-            {/* Campaign Activity Card */}
+            {/* Report Rate */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', height: '100%', position: 'relative', overflow: 'hidden' }}>
-                <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: '4px', bgcolor: '#2563eb' }} />
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Active Campaigns
-                      </Typography>
-                      <Typography variant="h3" sx={{ fontWeight: 800, color: '#2563eb', mt: 1 }}>
-                        {dashboardData.activeCampaigns}
-                      </Typography>
-                    </div>
-                    <Box sx={{ p: 1.5, borderRadius: '12px', bgcolor: '#dbeafe' }}>
-                      <CampaignIcon sx={{ color: '#2563eb', fontSize: 28 }} />
-                    </Box>
+              <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Reporting Rate
+                    </Typography>
+                    <TrendingUpIcon sx={{ color: '#10b981', fontSize: 20 }} />
                   </Box>
-                  <Typography variant="body2" sx={{ color: '#64748b', mt: 2 }}>
-                    <strong>{dashboardData.completedCampaigns}</strong> completed • <strong>{dashboardData.totalContacts}</strong> enrolled targets.
+                  <Typography variant="h4" sx={{ color: '#34d399', fontWeight: 700, mb: 0.5 }}>
+                    {dashboardData?.reportRate || 0}%
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    {dashboardData?.usersReported || 0} employees reported attacks
                   </Typography>
                 </CardContent>
               </Card>
             </Grid>
+
+            {/* Security Awareness Score */}
+            <Grid item xs={12} sm={6} md={3}>
+              <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+                <CardContent sx={{ p: 2.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1.5 }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Security Posture
+                    </Typography>
+                    <ShieldIcon sx={{ color: getScoreColor(dashboardData?.awarenessScore || 85), fontSize: 20 }} />
+                  </Box>
+                  <Typography variant="h4" sx={{ color: getScoreColor(dashboardData?.awarenessScore || 85), fontWeight: 700, mb: 0.5 }}>
+                    {dashboardData?.awarenessScore || 85}/100
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>
+                    {dashboardData?.awarenessScore >= 80 ? 'Robust Awareness' : 'Needs Remediation'}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
           </Grid>
 
-          {/* Interactive Timeline Chart & Quick Actions */}
-          <Grid container spacing={3} sx={{ mb: 3 }}>
-            {/* Timeline Line Chart */}
-            <Grid item xs={12} lg={8}>
-              <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', height: '100%' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                    <div>
-                      <Typography variant="h6" fontWeight={700} color="#0f172a">
-                        Simulation Activity Timeline
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Daily link click attempts vs. suspicious email reports.
-                      </Typography>
-                    </div>
-                  </Box>
-                  <Box sx={{ height: 280 }}>
-                    {timelineData.labels?.length > 0 ? (
-                      <Line data={timelineData} options={chartOptions} />
-                    ) : (
-                      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          No simulation click or report events recorded in the last {selectedRangeDays} days.
-                        </Typography>
-                      </Box>
-                    )}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Command & Quick Actions Card */}
-            <Grid item xs={12} lg={4}>
-              <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0', height: '100%' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" fontWeight={700} color="#0f172a" sx={{ mb: 1 }}>
-                    Quick Actions Center
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                    Launch new drills and manage awareness resources.
-                  </Typography>
-
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    <Button
-                      variant="contained"
-                      fullWidth
-                      startIcon={<SendIcon />}
-                      onClick={() => navigate('/console/campaign/create')}
-                      sx={{
-                        py: 1.2,
-                        borderRadius: '12px',
-                        fontWeight: 600,
-                        bgcolor: '#1d4ed8',
-                        '&:hover': { bgcolor: '#1e40af' },
-                      }}
-                    >
-                      Start New Campaign Drill
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      startIcon={<PeopleIcon />}
-                      onClick={() => navigate('/console/audience/create')}
-                      sx={{ py: 1, borderRadius: '12px', fontWeight: 600 }}
-                    >
-                      Import Audience Contacts
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      startIcon={<EmailIcon />}
-                      onClick={() => navigate('/console/templates/new')}
-                      sx={{ py: 1, borderRadius: '12px', fontWeight: 600 }}
-                    >
-                      Compose Email Template
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      startIcon={<OutboxIcon />}
-                      onClick={() => navigate('/console/sender-profile/create')}
-                      sx={{ py: 1, borderRadius: '12px', fontWeight: 600 }}
-                    >
-                      Configure SMTP Relay
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      startIcon={<AssessmentIcon />}
-                      onClick={() => navigate('/console/reports')}
-                      sx={{ py: 1, borderRadius: '12px', fontWeight: 600 }}
-                    >
-                      Export HR & SOC Reports
-                    </Button>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-
-          {/* Department Vulnerability Posture Table */}
-          <Card sx={{ borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          {/* Time-Series Telemetry Chart */}
+          <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', mb: 3 }}>
             <CardContent sx={{ p: 3 }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <div>
-                  <Typography variant="h6" fontWeight={700} color="#0f172a">
-                    Department Vulnerability Breakdown
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Helps HR and SOC teams pinpoint high-risk teams requiring dedicated awareness follow-up.
-                  </Typography>
-                </div>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => navigate('/console/reports')}
-                  sx={{ borderRadius: '8px', fontWeight: 600 }}
-                >
-                  View Full Risk Reports
-                </Button>
+                <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, fontSize: '1rem' }}>
+                  📈 Phishing Simulation Engagement Timeline ({selectedRangeDays} Days Window)
+                </Typography>
+                <Chip size="small" label="LEEF SIEM Stream Active" sx={{ bgcolor: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontWeight: 600, fontSize: '0.72rem' }} />
               </Box>
+              <Box sx={{ height: 260 }}>
+                {timelineData?.labels?.length > 0 ? (
+                  <Line data={timelineData} options={chartOptions} />
+                ) : (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                    <Typography variant="body2" sx={{ color: '#64748b' }}>
+                      No drill clicks or reports recorded in this {selectedRangeDays}-day time window.
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            </CardContent>
+          </Card>
 
-              {riskData.length === 0 ? (
-                <Box sx={{ py: 4, textAlign: 'center' }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No departmental data available yet. Launch a simulation to view team-by-team risk rankings.
-                  </Typography>
-                </Box>
-              ) : (
+          {/* Multi-Dimensional Analytics Matrix */}
+          <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+            <Box sx={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', px: 3, pt: 2 }}>
+              <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1, fontSize: '1.05rem' }}>
+                Multi-Dimensional Risk & Performance Analytics
+              </Typography>
+              <Tabs
+                value={activeTab}
+                onChange={(e, val) => setActiveTab(val)}
+                sx={{
+                  '& .MuiTab-root': {
+                    color: '#94a3b8',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '0.88rem',
+                    minHeight: 44,
+                    '&.Mui-selected': { color: '#60a5fa' },
+                  },
+                  '& .MuiTabs-indicator': { bgcolor: '#3b82f6', height: 3 },
+                }}
+              >
+                <Tab label={`🏢 Department-Wise (${riskData?.length || 0})`} />
+                <Tab label={`🚀 Campaign-Wise (${campaignAnalytics?.length || 0})`} />
+                <Tab label={`✉️ Template-Wise (${templateAnalytics?.length || 0})`} />
+                <Tab label={`👤 User Risk Watchlist (${userAnalytics?.repeatClickers?.length || 0})`} />
+              </Tabs>
+            </Box>
+
+            <CardContent sx={{ p: 0 }}>
+              
+              {/* Tab 0: Department Matrix */}
+              {activeTab === 0 && (
                 <TableContainer>
-                  <Table size="small">
+                  <Table>
                     <TableHead>
-                      <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                        <TableCell><strong>Department / Team</strong></TableCell>
-                        <TableCell align="center"><strong>Simulations Sent</strong></TableCell>
-                        <TableCell align="center"><strong>Users Clicked</strong></TableCell>
-                        <TableCell align="center"><strong>Users Reported</strong></TableCell>
-                        <TableCell align="center"><strong>Click-Through Rate</strong></TableCell>
-                        <TableCell align="center"><strong>Risk Posture</strong></TableCell>
+                      <TableRow>
+                        <TableCell>Department / Unit</TableCell>
+                        <TableCell align="center">Simulations Sent</TableCell>
+                        <TableCell align="center">Clicks</TableCell>
+                        <TableCell align="center">Reported</TableCell>
+                        <TableCell align="center">Click Rate</TableCell>
+                        <TableCell align="center">Reporting Rate</TableCell>
+                        <TableCell align="center">Risk Posture</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {riskData.slice(0, 8).map((row, idx) => (
-                        <TableRow key={idx} hover>
-                          <TableCell sx={{ fontWeight: 600, color: '#0f172a' }}>{row.name}</TableCell>
-                          <TableCell align="center">{row.simulationsSent}</TableCell>
-                          <TableCell align="center" sx={{ color: row.usersClicked > 0 ? '#dc2626' : 'inherit', fontWeight: row.usersClicked > 0 ? 700 : 400 }}>
-                            {row.usersClicked}
-                          </TableCell>
-                          <TableCell align="center" sx={{ color: row.usersReported > 0 ? '#059669' : 'inherit', fontWeight: row.usersReported > 0 ? 700 : 400 }}>
-                            {row.usersReported}
-                          </TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 700 }}>
-                            {row.clickRate}%
-                          </TableCell>
-                          <TableCell align="center">
-                            {getRiskChip(row.riskLevel)}
+                      {riskData.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} align="center" sx={{ py: 4, color: '#64748b' }}>
+                            No department tracking data available in this time window.
                           </TableCell>
                         </TableRow>
-                      ))}
+                      ) : (
+                        riskData.map((dept, idx) => (
+                          <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                            <TableCell sx={{ fontWeight: 600, color: '#f8fafc' }}>
+                              {dept.name}
+                            </TableCell>
+                            <TableCell align="center">{dept.simulationsSent}</TableCell>
+                            <TableCell align="center" sx={{ color: dept.clickCount > 0 ? '#f87171' : '#94a3b8' }}>{dept.clickCount}</TableCell>
+                            <TableCell align="center" sx={{ color: dept.reportCount > 0 ? '#34d399' : '#94a3b8' }}>{dept.reportCount}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700, color: dept.clickRate > 15 ? '#f87171' : '#cbd5e1' }}>
+                              {dept.clickRate}%
+                            </TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700, color: '#34d399' }}>
+                              {dept.reportRate || 0}%
+                            </TableCell>
+                            <TableCell align="center">
+                              {getRiskChip(dept.riskLevel)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </TableContainer>
               )}
+
+              {/* Tab 1: Campaign Matrix */}
+              {activeTab === 1 && (
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Campaign Drill</TableCell>
+                        <TableCell>Scenario</TableCell>
+                        <TableCell align="center">Status</TableCell>
+                        <TableCell align="center">Sent</TableCell>
+                        <TableCell align="center">Clicks</TableCell>
+                        <TableCell align="center">Reports</TableCell>
+                        <TableCell align="center">Click Rate</TableCell>
+                        <TableCell align="center">Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {campaignAnalytics.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} align="center" sx={{ py: 4, color: '#64748b' }}>
+                            No campaigns found in this time period.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        campaignAnalytics.map((c) => (
+                          <TableRow key={c.id} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                            <TableCell sx={{ fontWeight: 600, color: '#f8fafc' }}>{c.name}</TableCell>
+                            <TableCell sx={{ color: '#94a3b8' }}>{c.templateName}</TableCell>
+                            <TableCell align="center">
+                              <Chip size="small" label={c.status} sx={{ bgcolor: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', fontWeight: 600, textTransform: 'capitalize' }} />
+                            </TableCell>
+                            <TableCell align="center">{c.sentCount}</TableCell>
+                            <TableCell align="center" sx={{ color: c.clickCount > 0 ? '#f87171' : '#94a3b8' }}>{c.clickCount}</TableCell>
+                            <TableCell align="center" sx={{ color: '#34d399' }}>{c.reportCount}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700, color: c.clickRate > 15 ? '#f87171' : '#cbd5e1' }}>
+                              {c.clickRate}%
+                            </TableCell>
+                            <TableCell align="center">
+                              <Button size="small" onClick={() => navigate(`/console/campaign/${c.id}`)} sx={{ color: '#60a5fa', fontSize: '0.75rem' }}>
+                                View Details →
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
+              {/* Tab 2: Template Vulnerability */}
+              {activeTab === 2 && (
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Threat Scenario Template</TableCell>
+                        <TableCell>Category</TableCell>
+                        <TableCell align="center">Difficulty</TableCell>
+                        <TableCell align="center">Sent Drills</TableCell>
+                        <TableCell align="center">Click Count</TableCell>
+                        <TableCell align="center">Phish Success Rate</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {templateAnalytics.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} align="center" sx={{ py: 4, color: '#64748b' }}>
+                            No scenario analytics recorded yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        templateAnalytics.map((t) => (
+                          <TableRow key={t.id} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                            <TableCell sx={{ fontWeight: 600, color: '#f8fafc' }}>
+                              {t.name}
+                              <Typography variant="caption" sx={{ display: 'block', color: '#64748b' }}>{t.subject}</Typography>
+                            </TableCell>
+                            <TableCell sx={{ color: '#94a3b8' }}>{t.category}</TableCell>
+                            <TableCell align="center">
+                              <Rating value={t.difficulty} readOnly size="small" icon={<StarIcon sx={{ color: '#fbbf24', fontSize: '0.85rem' }} />} />
+                            </TableCell>
+                            <TableCell align="center">{t.simulationsSent}</TableCell>
+                            <TableCell align="center" sx={{ color: t.clickCount > 0 ? '#f87171' : '#94a3b8' }}>{t.clickCount}</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700, color: t.clickRate > 20 ? '#f87171' : '#cbd5e1' }}>
+                              {t.clickRate}%
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
+              {/* Tab 3: User Watchlist */}
+              {activeTab === 3 && (
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Target Employee</TableCell>
+                        <TableCell>Department / OU</TableCell>
+                        <TableCell align="center">System IP Address</TableCell>
+                        <TableCell align="center">Simulations</TableCell>
+                        <TableCell align="center">Clicks</TableCell>
+                        <TableCell align="center">Reports</TableCell>
+                        <TableCell align="center">Risk Profile</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {userAnalytics?.repeatClickers?.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} align="center" sx={{ py: 4, color: '#34d399', fontWeight: 600 }}>
+                            🎉 Zero repeat clickers identified in the current {selectedRangeDays}-day retention period!
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        userAnalytics?.repeatClickers?.map((u, idx) => (
+                          <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                            <TableCell sx={{ fontWeight: 600, color: '#f8fafc' }}>
+                              {u.name}
+                              <Typography variant="caption" sx={{ display: 'block', color: '#64748b' }}>{u.email}</Typography>
+                            </TableCell>
+                            <TableCell sx={{ color: '#94a3b8' }}>
+                              {u.department} {u.ou ? `(${u.ou})` : ''}
+                            </TableCell>
+                            <TableCell align="center">
+                              {u.ipAddress && u.ipAddress !== 'N/A' ? (
+                                <Chip
+                                  size="small"
+                                  label={u.ipAddress}
+                                  sx={{
+                                    bgcolor: 'rgba(59, 130, 246, 0.15)',
+                                    color: '#93c5fd',
+                                    fontFamily: 'monospace',
+                                    fontWeight: 600,
+                                    fontSize: '0.72rem',
+                                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                                  }}
+                                />
+                              ) : (
+                                <Typography variant="caption" sx={{ color: '#64748b' }}>—</Typography>
+                              )}
+                            </TableCell>
+                            <TableCell align="center">{u.simulationsReceived}</TableCell>
+                            <TableCell align="center" sx={{ color: '#f87171', fontWeight: 700 }}>{u.clickCount}</TableCell>
+                            <TableCell align="center" sx={{ color: '#34d399' }}>{u.reportCount}</TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                size="small"
+                                label={u.riskTier}
+                                sx={{
+                                  bgcolor: u.riskTier === 'Chronic Clicker' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                                  color: u.riskTier === 'Chronic Clicker' ? '#f87171' : '#fbbf24',
+                                  fontWeight: 700,
+                                  fontSize: '0.72rem',
+                                  border: u.riskTier === 'Chronic Clicker' ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)',
+                                }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
             </CardContent>
           </Card>
 

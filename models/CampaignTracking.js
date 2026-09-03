@@ -6,17 +6,20 @@ const campaignTrackingSchema = new Schema({
     campaign: {
         type: Schema.Types.ObjectId,
         ref: 'Campaign',
-        required: true
+        required: true,
+        index: true,
     },
     contact: {
         type: Schema.Types.ObjectId,
         ref: 'Contact',
-        required: true
+        required: true,
+        index: true,
     },
     email: {
         type: String,
         required: true,
-        trim: true
+        trim: true,
+        index: true,
     },
     phoneNumber: {
         type: String,
@@ -25,12 +28,14 @@ const campaignTrackingSchema = new Schema({
     shortId: {
         type: String,
         unique: true,
-        required: true
+        required: true,
+        index: true,
     },
     status: {
         type: String,
         enum: ['pending', 'sent', 'opened', 'clicked', 'reported', 'failed', 'deferred', 'bounced', 'complained', 'disabled'],
-        default: 'pending'
+        default: 'pending',
+        index: true,
     },
     openedAt: {
         type: Date,
@@ -48,6 +53,23 @@ const campaignTrackingSchema = new Schema({
         type: Number,
         default: 0
     },
+    clickedIp: {
+        type: String,
+        default: null,
+        trim: true,
+        index: true,
+    },
+    clickedUserAgent: {
+        type: String,
+        default: null,
+    },
+    clickedHistory: [
+        {
+            ip: { type: String, trim: true },
+            userAgent: { type: String },
+            timestamp: { type: Date, default: Date.now }
+        }
+    ],
     reportedAt: {
         type: Date,
         default: null
@@ -55,6 +77,11 @@ const campaignTrackingSchema = new Schema({
     reportedCount: {
         type: Number,
         default: 0
+    },
+    reportedIp: {
+        type: String,
+        default: null,
+        trim: true,
     },
     lastAttempt: {
         type: Date,

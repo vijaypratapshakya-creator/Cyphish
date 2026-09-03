@@ -3,13 +3,18 @@ import bcrypt from 'bcrypt';
 
 const UserSchema = new mongoose.Schema({
   firstName: { type: String, required: true },
-  lastName: { type: String },
-  username: { type: String, required: true, unique: true },
-  email: { type: String, unique: true },
+  lastName: { type: String, default: '' },
+  username: { type: String, required: true, unique: true, trim: true },
+  email: { type: String, unique: true, trim: true, lowercase: true },
   password: { type: String, required: true }, // hashed
-  role: { type: String, enum: ['admin', 'campaign_manager', 'viewer', 'user'], default: 'admin' },
+  role: { 
+    type: String, 
+    enum: ['admin', 'campaign_manager', 'viewer', 'user'], 
+    default: 'campaign_manager' 
+  },
   accountLocked: { type: Boolean, default: false },
   isRoot: { type: Boolean, default: false },
+  lastLoginAt: { type: Date },
 }, { timestamps: true });
 
 // Hash password before saving

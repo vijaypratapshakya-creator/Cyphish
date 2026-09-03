@@ -91,11 +91,13 @@ const Sidebar = () => {
     logout();
   };
 
+  const userRole = user?.role || 'admin';
+
   const menuItems = [
     {
-      group: 'Analytics & Reports',
+      group: 'Analytics & Command',
       items: [
-        { text: 'Dashboard', icon: <DashboardIcon />, path: '/console/dashboard' },
+        { text: 'SOC Dashboard', icon: <DashboardIcon />, path: '/console/dashboard' },
         { text: 'Reports & Risk', icon: <AssessmentIcon />, path: '/console/reports' },
       ],
     },
@@ -105,33 +107,47 @@ const Sidebar = () => {
         { text: 'Audience Lists', icon: <GroupIcon />, path: '/console/audience' },
         { text: 'SMTP Profiles', icon: <OutboxIcon />, path: '/console/sender-profile' },
         { text: 'Email Templates', icon: <EmailIcon />, path: '/console/templates' },
-        { text: 'Campaigns', icon: <CampaignIcon />, path: '/console/campaign' },
+        { text: 'Campaign Drills', icon: <CampaignIcon />, path: '/console/campaign' },
       ],
     },
-    {
-      group: 'Administration',
-      items: [
-        { text: 'System Settings', icon: <SettingsIcon />, path: '/console/settings' },
-      ],
-    },
+    ...(userRole === 'admin' ? [
+      {
+        group: 'Administration & RBAC',
+        items: [
+          { text: 'System Settings', icon: <SettingsIcon />, path: '/console/settings' },
+        ],
+      }
+    ] : []),
   ];
 
-  const accountNavItem = { text: 'Account Profile', icon: <AccountCircleIcon />, path: '/console/account/profile' };
+  const getRoleBadge = (role) => {
+    switch (role) {
+      case 'admin':
+        return <Chip size="small" label="👑 Main Admin" sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 700, fontSize: '0.72rem', border: '1px solid rgba(59, 130, 246, 0.4)' }} />;
+      case 'campaign_manager':
+        return <Chip size="small" label="🛠️ Security Engineer" sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700, fontSize: '0.72rem', border: '1px solid rgba(16, 185, 129, 0.4)' }} />;
+      default:
+        return <Chip size="small" label="👁️ Auditor / Viewer" sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 700, fontSize: '0.72rem', border: '1px solid rgba(245, 158, 11, 0.4)' }} />;
+    }
+  };
 
   const listItemSx = {
     mx: 1.5,
-    mb: 0.5,
-    borderRadius: '10px',
+    mb: 0.6,
+    borderRadius: '12px',
     backgroundColor: 'transparent',
-    color: '#475569',
+    color: '#94a3b8',
+    border: '1px solid transparent',
     '&:hover': {
-      backgroundColor: 'rgba(29, 78, 216, 0.06)',
-      color: '#1d4ed8',
-      transform: 'translateX(3px)',
+      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+      color: '#f8fafc',
+      borderColor: 'rgba(59, 130, 246, 0.2)',
+      transform: 'translateX(4px)',
     },
     transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
     '& .MuiListItemIcon-root': {
       color: '#64748b',
+      minWidth: 38,
       transition: 'color 0.2s ease',
     },
     '& .MuiListItemText-primary': {
@@ -139,16 +155,15 @@ const Sidebar = () => {
       fontSize: '0.88rem',
     },
     '&.active': {
-      backgroundColor: '#1d4ed8',
-      color: '#ffffff',
-      '&:hover': {
-        backgroundColor: '#1e40af',
-      },
+      backgroundColor: 'rgba(59, 130, 246, 0.18)',
+      color: '#60a5fa',
+      border: '1px solid rgba(59, 130, 246, 0.45)',
+      boxShadow: '0 0 15px rgba(59, 130, 246, 0.2)',
       '& .MuiListItemIcon-root': {
-        color: '#ffffff',
+        color: '#60a5fa',
       },
       '& .MuiListItemText-primary': {
-        fontWeight: 600,
+        fontWeight: 700,
         color: '#ffffff',
       },
     },
@@ -156,17 +171,17 @@ const Sidebar = () => {
 
   return (
     <>
-      {/* Modern Sleek AppBar */}
+      {/* Cyber Command Topbar */}
       <AppBar 
         position="fixed" 
         sx={{ 
           zIndex: theme.zIndex.drawer + 1,
-          bgcolor: '#0f172a',
-          boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1)',
-          borderBottom: '1px solid #1e293b',
+          bgcolor: '#070b14',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         }}
       >
-        <Toolbar variant="dense" sx={{ display: 'flex', justifyContent: 'space-between', minHeight: '52px !important', px: 2 }}>
+        <Toolbar variant="dense" sx={{ display: 'flex', justifyContent: 'space-between', minHeight: '56px !important', px: 2.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {isMobile && (
               <IconButton
@@ -179,46 +194,48 @@ const Sidebar = () => {
                 <MenuIcon />
               </IconButton>
             )}
-            <Typography 
-              variant="h6" 
-              noWrap 
-              component="div" 
-              sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}
-            >
-              <Box component="img" src={cyphishLogo} alt="CyPhish" sx={{ height: 32, width: 'auto', display: 'block' }} />
-            </Typography>
-            <Chip
+            <Box 
+              component="img" 
+              src={cyphishLogo} 
+              alt="CyPhish" 
+              sx={{ 
+                height: 28,
+                cursor: 'pointer',
+                filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.3))',
+              }}
+              onClick={() => navigate('/console/dashboard')}
+            />
+            <Chip 
+              label="Cyber Command SOC" 
               size="small"
-              label="Enterprise Security"
               sx={{
-                bgcolor: 'rgba(37, 99, 235, 0.15)',
-                color: '#60a5fa',
-                fontWeight: 600,
+                bgcolor: 'rgba(16, 185, 129, 0.12)',
+                color: '#10b981',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                fontWeight: 700,
                 fontSize: '0.72rem',
-                height: 22,
-                border: '1px solid rgba(59, 130, 246, 0.3)',
                 display: { xs: 'none', sm: 'inline-flex' },
               }}
             />
           </Box>
 
           {/* User Profile Avatar & Menu */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8 }}>
             <Box sx={{ textAlign: 'right', display: { xs: 'none', md: 'block' } }}>
-              <Typography variant="body2" sx={{ fontWeight: 600, color: '#f8fafc', lineHeight: 1.2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: '#f8fafc', lineHeight: 1.2 }}>
                 {user?.firstName ? `${user.firstName} ${user.lastName || ''}` : user?.username || 'Administrator'}
               </Typography>
-              <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.72rem' }}>
-                {user?.role === 'admin' ? 'Security Admin' : user?.role || 'User'}
-              </Typography>
+              <Box sx={{ mt: 0.3 }}>
+                {getRoleBadge(user?.role)}
+              </Box>
             </Box>
 
             <IconButton
               size="small"
               onClick={handleProfileMenuOpen}
-              sx={{ p: 0.5, border: '2px solid rgba(255,255,255,0.1)' }}
+              sx={{ p: 0.5, border: '2px solid rgba(59, 130, 246, 0.3)' }}
             >
-              <Avatar sx={{ bgcolor: '#2563eb', color: '#fff', width: 34, height: 34, fontWeight: 700, fontSize: '0.9rem' }}>
+              <Avatar sx={{ bgcolor: '#2563eb', color: '#fff', width: 34, height: 34, fontWeight: 700, fontSize: '0.9rem', boxShadow: '0 0 10px rgba(37, 99, 235, 0.4)' }}>
                 {user?.firstName ? user.firstName[0].toUpperCase() : (user?.username ? user.username[0].toUpperCase() : 'A')}
               </Avatar>
             </IconButton>
@@ -232,39 +249,46 @@ const Sidebar = () => {
               PaperProps={{
                 sx: {
                   borderRadius: '16px',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-                  minWidth: 250,
+                  bgcolor: '#111827',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  boxShadow: '0 15px 35px rgba(0,0,0,0.6)',
+                  minWidth: 260,
                   p: 1,
                   mt: 1,
                 }
               }}
             >
               <Box sx={{ px: 2, py: 1 }}>
-                <Typography variant="subtitle2" fontWeight={700} noWrap>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#f8fafc' }} noWrap>
                   {user?.firstName ? `${user.firstName} ${user.lastName || ''}` : user?.username || 'Administrator'}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" noWrap sx={{ fontSize: '0.8rem' }}>
+                <Typography variant="body2" sx={{ color: '#94a3b8', fontSize: '0.8rem' }} noWrap>
                   {user?.email || 'admin@cyphish'}
                 </Typography>
+                <Box sx={{ mt: 0.8 }}>
+                  {getRoleBadge(user?.role)}
+                </Box>
               </Box>
-              <Divider sx={{ my: 1 }} />
-              <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/console/account/profile'); }}>
+              <Divider sx={{ my: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
+              <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/console/account/profile'); }} sx={{ color: '#cbd5e1', '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' } }}>
                 Account Profile
               </MenuItem>
-              <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/console/settings'); }}>
-                System Settings
-              </MenuItem>
-              <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/console/account/security'); }}>
+              {userRole === 'admin' && (
+                <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/console/settings'); }} sx={{ color: '#cbd5e1', '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' } }}>
+                  System Settings & RBAC
+                </MenuItem>
+              )}
+              <MenuItem onClick={() => { handleProfileMenuClose(); navigate('/console/account/security'); }} sx={{ color: '#cbd5e1', '&:hover': { bgcolor: 'rgba(255,255,255,0.06)' } }}>
                 Change Password
               </MenuItem>
-              <Divider sx={{ my: 1 }} />
+              <Divider sx={{ my: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
               <Box sx={{ px: 2, py: 0.5 }}>
                 <Typography variant="caption" color="text.secondary" display="block">
                   Version: {version} {releaseDate ? `(${releaseDate})` : ''}
                 </Typography>
               </Box>
-              <Divider sx={{ my: 0.5 }} />
-              <MenuItem onClick={handleLogout} sx={{ color: '#dc2626', fontWeight: 600 }}>
+              <Divider sx={{ my: 0.5, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
+              <MenuItem onClick={handleLogout} sx={{ color: '#ef4444', fontWeight: 700, '&:hover': { bgcolor: 'rgba(239, 68, 68, 0.1)' } }}>
                 Sign Out
               </MenuItem>
             </Menu>
@@ -272,70 +296,75 @@ const Sidebar = () => {
         </Toolbar>
       </AppBar>
 
-      {/* Drawer */}
+      {/* Cyber Command Drawer */}
       <Drawer
-        variant={isMobile ? "temporary" : "permanent"}
-        sx={{
-          width: 250,
-          flexShrink: 0,
-          '& .MuiDrawer-paper': {
-            width: 250,
-            boxSizing: 'border-box',
-            borderRight: '1px solid #e2e8f0',
-            bgcolor: '#ffffff',
-            display: 'flex',
-            flexDirection: 'column',
-          },
-        }}
+        variant={isMobile ? 'temporary' : 'permanent'}
         open={open}
         onClose={handleToggle}
-        ModalProps={{ keepMounted: true }}
+        sx={{
+          width: 240,
+          flexShrink: 0,
+          '& .MuiDrawer-paper': {
+            width: 240,
+            boxSizing: 'border-box',
+            bgcolor: '#070b14',
+            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            mt: '56px',
+            height: 'calc(100% - 56px)',
+          },
+        }}
       >
-        <Toolbar variant="dense" sx={{ minHeight: '52px !important' }} />
-        
-        <List sx={{ pt: 2, flex: 1, overflowY: 'auto' }}>
-          {menuItems.map((group) => (
-            <Box key={group.group} sx={{ mb: 1.5 }}>
-              <Typography
-                variant="caption"
-                sx={{
-                  px: 3,
-                  py: 0.5,
-                  fontWeight: 700,
-                  fontSize: '0.7rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.6px',
-                  color: '#94a3b8',
+        <Box sx={{ pt: 2 }}>
+          {menuItems.map((group, groupIdx) => (
+            <Box key={groupIdx} sx={{ mb: 2 }}>
+              <Typography 
+                variant="caption" 
+                sx={{ 
+                  px: 3, 
+                  py: 0.5, 
                   display: 'block',
+                  color: '#64748b', 
+                  fontWeight: 700, 
+                  fontSize: '0.68rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px'
                 }}
               >
                 {group.group}
               </Typography>
-              {group.items.map((item) => (
-                <ListItem
-                  key={item.text}
-                  component={NavLink}
-                  to={item.path}
-                  onClick={isMobile ? handleToggle : undefined}
-                  sx={listItemSx}
-                >
-                  <ListItemIcon sx={{ minWidth: 36 }}>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} />
-                </ListItem>
-              ))}
+              <List sx={{ p: 0 }}>
+                {group.items.map((item, itemIdx) => (
+                  <ListItem
+                    key={itemIdx}
+                    button
+                    component={NavLink}
+                    to={item.path}
+                    sx={listItemSx}
+                    onClick={() => isMobile && setOpen(false)}
+                  >
+                    <ListItemIcon>{item.icon}</ListItemIcon>
+                    <ListItemText primary={item.text} />
+                  </ListItem>
+                ))}
+              </List>
             </Box>
           ))}
-        </List>
+        </Box>
 
-        <Box sx={{ borderTop: '1px solid #e2e8f0', p: 1, bgcolor: '#f8fafc' }}>
+        {/* Footer Account Link */}
+        <Box sx={{ p: 1.5, borderTop: '1px solid rgba(255, 255, 255, 0.08)' }}>
           <ListItem
+            button
             component={NavLink}
-            to={accountNavItem.path}
-            onClick={isMobile ? handleToggle : undefined}
+            to="/console/account/profile"
             sx={listItemSx}
+            onClick={() => isMobile && setOpen(false)}
           >
-            <ListItemIcon sx={{ minWidth: 36 }}>{accountNavItem.icon}</ListItemIcon>
-            <ListItemText primary={accountNavItem.text} />
+            <ListItemIcon><AccountCircleIcon /></ListItemIcon>
+            <ListItemText primary="Account Profile" />
           </ListItem>
         </Box>
       </Drawer>

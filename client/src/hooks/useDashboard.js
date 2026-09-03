@@ -19,6 +19,9 @@ export const useDashboard = (days = 30) => {
 
     const [timelineData, setTimelineData] = useState({ labels: [], datasets: [] });
     const [riskData, setRiskData] = useState([]);
+    const [campaignAnalytics, setCampaignAnalytics] = useState([]);
+    const [templateAnalytics, setTemplateAnalytics] = useState([]);
+    const [userAnalytics, setUserAnalytics] = useState({ allUsers: [], repeatClickers: [], champions: [] });
     const [systemStats, setSystemStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -30,25 +33,23 @@ export const useDashboard = (days = 30) => {
             const startDate = new Date(endDate.getTime() - days * 24 * 60 * 60 * 1000);
             const queryParams = `?start=${startDate.toISOString()}&end=${endDate.toISOString()}`;
 
-            const [overviewRes, timelineRes, riskRes, statsRes] = await Promise.all([
+            const [overviewRes, timelineRes, riskRes, campaignRes, templateRes, userRes, statsRes] = await Promise.all([
                 axiosInstance.get(`/api/dashboard/overview${queryParams}`).catch(() => ({ data: { success: false } })),
                 axiosInstance.get(`/api/dashboard/timeline${queryParams}`).catch(() => ({ data: { success: false } })),
                 axiosInstance.get(`/api/dashboard/risk${queryParams}&groupBy=department`).catch(() => ({ data: { success: false } })),
+                axiosInstance.get(`/api/dashboard/analytics/campaigns${queryParams}`).catch(() => ({ data: { success: false } })),
+                axiosInstance.get(`/api/dashboard/analytics/templates`).catch(() => ({ data: { success: false } })),
+                axiosInstance.get(`/api/dashboard/analytics/users${queryParams}`).catch(() => ({ data: { success: false } })),
                 axiosInstance.get('/api/system/stats').catch(() => ({ data: { success: false } })),
             ]);
 
-            if (overviewRes.data?.success) {
-                setDashboardData(overviewRes.data.data);
-            }
-            if (timelineRes.data?.success) {
-                setTimelineData(timelineRes.data.data);
-            }
-            if (riskRes.data?.success) {
-                setRiskData(riskRes.data.data || []);
-            }
-            if (statsRes.data?.success) {
-                setSystemStats(statsRes.data.data);
-            }
+            if (overviewRes.data?.success) setDashboardData(overviewRes.data.data);
+            if (timelineRes.data?.success) setTimelineData(timelineRes.data.data);
+            if (riskRes.data?.success) setRiskData(riskRes.data.data || []);
+            if (campaignRes.data?.success) setCampaignAnalytics(campaignRes.data.data || []);
+            if (templateRes.data?.success) setTemplateAnalytics(templateRes.data.data || []);
+            if (userRes.data?.success) setUserAnalytics(userRes.data.data || { allUsers: [], repeatClickers: [], champions: [] });
+            if (statsRes.data?.success) setSystemStats(statsRes.data.data);
         } catch (err) {
             console.error('Error fetching dashboard data:', err);
             setError(err.message);
@@ -61,5 +62,16 @@ export const useDashboard = (days = 30) => {
         fetchData();
     }, [days]);
 
-    return { dashboardData, timelineData, riskData, systemStats, loading, error, refetch: fetchData };
+    return {
+        dashboardData,
+        timelineData,
+        riskData,
+        campaignAnalytics,
+        templateAnalytics,
+        userAnalytics,
+        systemStats,
+        loading,
+        error,
+        refetch: fetchData,
+    };
 };

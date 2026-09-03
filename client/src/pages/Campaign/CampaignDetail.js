@@ -153,7 +153,7 @@ const CampaignDetail = () => {
     };
 
     return (
-        <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: "#f0f4f7" }}>
+        <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0b0f19' }}>
             <Sidebar />
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                 <Container maxWidth="lg" sx={{ flexGrow: 1, mt: '96px', mb: 2 }}>

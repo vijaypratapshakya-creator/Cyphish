@@ -4,6 +4,13 @@ import { getSystemSettings } from './systemSettingService.js';
 const escapeFilter = (value) =>
   String(value).replace(/[\\()*\0]/g, (char) => `\\${char.charCodeAt(0).toString(16).padStart(2, '0')}`);
 
+function parseOuFromDn(dn) {
+  if (!dn) return '';
+  const ouMatches = dn.match(/OU=([^,]+)/gi);
+  if (!ouMatches) return '';
+  return ouMatches.map((m) => m.replace(/OU=/i, '')).join(' / ');
+}
+
 function clientFor(cfg) {
   return ldap.createClient({
     url: cfg.url,
@@ -79,7 +86,7 @@ export async function testLdapConnection(customConfig = null) {
     const entries = await search(client, cfg.baseDN, {
       scope: 'sub',
       filter: '(&(objectCategory=person)(objectClass=user))',
-      attributes: ['displayName', 'mail'],
+      attributes: ['displayName', 'mail', 'sAMAccountName', 'department'],
       sizeLimit: 1,
     });
     return {
@@ -132,7 +139,7 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
 
     if (query) {
       const value = escapeFilter(query);
-      clauses.push(`(|(displayName=*${value}*)(mail=*${value}*)(sAMAccountName=*${value}*))`);
+      clauses.push(`(|(displayName=*${value}*)(mail=*${value}*)(sAMAccountName=*${value}*)(userPrincipalName=*${value}*))`);
     }
 
     const entries = await search(client, base, {
@@ -143,9 +150,13 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
         'givenName',
         'sn',
         'mail',
+        'userPrincipalName',
+        'sAMAccountName',
         'telephoneNumber',
         'title',
         'department',
+        'physicalDeliveryOfficeName',
+        'company',
         'distinguishedName',
         'memberOf',
       ],
@@ -153,22 +164,30 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
     });
 
     return entries
-      .filter((entry) => entry.mail)
-      .map((entry) => ({
-        firstName: entry.givenName || entry.displayName || '',
-        lastName: entry.sn || '',
-        email: String(entry.mail).toLowerCase(),
-        phoneNumber: entry.telephoneNumber || '',
-        role: entry.title || '',
-        department: entry.department || '',
-        directoryDn: entry.distinguishedName || entry.dn,
-        directoryGroups: Array.isArray(entry.memberOf)
-          ? entry.memberOf
-          : entry.memberOf
-          ? [entry.memberOf]
-          : [],
-        source: 'ldap',
-      }));
+      .filter((entry) => entry.mail || entry.userPrincipalName)
+      .map((entry) => {
+        const mailAddress = String(entry.mail || entry.userPrincipalName || '').toLowerCase();
+        const dn = entry.distinguishedName || entry.dn || '';
+        return {
+          username: entry.sAMAccountName || mailAddress.split('@')[0] || '',
+          firstName: entry.givenName || entry.displayName || '',
+          lastName: entry.sn || '',
+          email: mailAddress,
+          phoneNumber: entry.telephoneNumber || '',
+          role: entry.title || '',
+          department: entry.department || 'General',
+          ou: parseOuFromDn(dn),
+          teamName: entry.physicalDeliveryOfficeName || entry.department || '',
+          company: entry.company || '',
+          directoryDn: dn,
+          directoryGroups: Array.isArray(entry.memberOf)
+            ? entry.memberOf
+            : entry.memberOf
+            ? [entry.memberOf]
+            : [],
+          source: 'ldap',
+        };
+      });
   } finally {
     try {
       client.destroy();

@@ -5,7 +5,6 @@ import {
   Typography,
   Tabs,
   Tab,
-  Paper,
   TextField,
   Button,
   Switch,
@@ -27,18 +26,22 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
-  People as PeopleIcon,
-  Assessment as ReportIcon,
-  SmartToy as AIIcon,
-  History as AuditIcon,
-  CheckCircle as CheckCircleIcon,
-  Send as SendIcon,
-  Search as SearchIcon,
   Save as SaveIcon,
-  Refresh as RefreshIcon,
+  Lock as LockIcon,
+  LockOpen as LockOpenIcon,
+  PersonAdd as PersonAddIcon,
+  Delete as DeleteIcon,
+  PlayArrow as PlayArrowIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 
 import Sidebar from '../../components/Sidebar';
@@ -46,13 +49,16 @@ import Footer from '../../components/Footer';
 import {
   getSystemSettings,
   updateSystemSettings,
-  sendTestReport,
   testLdapConnection,
-  searchDirectoryUsers,
   getSystemStats,
   getSenderProfiles,
+  testSiemForwarding,
+  triggerRetentionCleanup,
+  getUsers,
+  createUser,
+  toggleLockUser,
+  deleteUser,
 } from '../../services/systemService';
-import IntegrationsTab from '../Account/IntegrationsTab';
 
 const Settings = () => {
   const [tabIndex, setTabIndex] = useState(0);
@@ -65,7 +71,30 @@ const Settings = () => {
     publicUrl: '',
     organizationName: 'CyPhish Security Awareness',
     trustProxy: true,
-    siemLeefStdout: false,
+    logRetentionDays: 180,
+  });
+
+  const [landingPage, setLandingPage] = useState({
+    warningTitle: 'Oops! You clicked a simulated phishing link.',
+    warningMessage: "Don't panic! This was an authorized internal security awareness drill conducted by your organization. No real credentials or sensitive data were collected.",
+    nextStepsMessage: 'Your security team has logged this drill for awareness tracking. Next time you see a suspicious email, always use the Report Phishing link or forward it to your SOC / IT Security desk!',
+    reportSuccessTitle: '🎉 Outstanding Job! You Reported a Phishing Simulation.',
+    reportSuccessMessage: 'You correctly identified an authorized security drill and reported it. Your proactive vigilance protects our entire organization from real-world cyber attacks!',
+    redFlags: [
+      { title: '1. Mismatched Sender Domain', description: 'Always verify the sender email address instead of just looking at the display name.' },
+      { title: '2. Artificial Urgency & Coercion', description: 'Attackers pressure you with tight deadlines like "Your account will be suspended within 2 hours" to bypass rational thought.' },
+      { title: '3. Suspicious Hyperlink Destination', description: 'Hover over links before clicking to preview the real destination URL in your email client status bar.' },
+      { title: '4. Unexpected Password / Action Request', description: 'Legitimate IT teams never ask you to verify passwords via unsolicited links.' },
+    ],
+  });
+
+  const [siem, setSiem] = useState({
+    enabled: false,
+    host: '',
+    port: 514,
+    protocol: 'UDP',
+    format: 'LEEF_2.0',
+    facility: 'local0',
   });
 
   const [ldap, setLdap] = useState({
@@ -88,101 +117,215 @@ const Settings = () => {
     subject: 'CyPhish Scheduled Awareness Report',
   });
 
-  // Auxiliary data
-  const [senderProfiles, setSenderProfiles] = useState([]);
-  const [auditLogs, setAuditLogs] = useState([]);
+  // User Management State
+  const [usersList, setUsersList] = useState([]);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [newUserData, setNewUserData] = useState({
+    firstName: '',
+    lastName: '',
+    username: '',
+    email: '',
+    password: '',
+    role: 'campaign_manager',
+  });
+  const [userCreating, setUserCreating] = useState(false);
+
+  // SIEM & Retention Test State
+  const [testingSiem, setTestingSiem] = useState(false);
+  const [siemTestResult, setSiemTestResult] = useState(null);
+  const [purgingRetention, setPurgingRetention] = useState(false);
 
   // LDAP Testing State
   const [testingLdap, setTestingLdap] = useState(false);
   const [ldapTestResult, setLdapTestResult] = useState(null);
-  const [directorySearchQuery, setDirectorySearchQuery] = useState('');
-  const [directorySearchResults, setDirectorySearchResults] = useState([]);
-  const [searchingDirectory, setSearchingDirectory] = useState(false);
 
-  // Report Testing State
-  const [testingReport, setTestingReport] = useState(false);
-  const [reportTestEmail, setReportTestEmail] = useState('');
-  const [reportTestResult, setReportTestResult] = useState(null);
+  // Auxiliary data
+  const [senderProfiles, setSenderProfiles] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
 
-  const fetchSettings = async () => {
-    setLoading(true);
+  useEffect(() => {
+    loadSettings();
+    loadUsers();
+  }, []);
+
+  const loadSettings = async () => {
     try {
-      const [settingsRes, profilesRes, statsRes] = await Promise.all([
+      setLoading(true);
+      const [settingsRes, statsRes, profilesRes] = await Promise.all([
         getSystemSettings(),
-        getSenderProfiles().catch(() => ({ success: false, data: [] })),
-        getSystemStats().catch(() => ({ success: false, data: {} })),
+        getSystemStats(),
+        getSenderProfiles(),
       ]);
 
-      if (settingsRes?.success && settingsRes?.data) {
+      if (settingsRes.success && settingsRes.data) {
         const d = settingsRes.data;
-        if (d.general) setGeneral(d.general);
+        if (d.general) {
+          setGeneral({
+            publicUrl: d.general.publicUrl || '',
+            organizationName: d.general.organizationName || 'CyPhish Security Awareness',
+            trustProxy: d.general.trustProxy ?? true,
+            logRetentionDays: d.general.logRetentionDays || 180,
+          });
+        }
+        if (d.landingPage) {
+          setLandingPage({
+            warningTitle: d.landingPage.warningTitle || 'Oops! You clicked a simulated phishing link.',
+            warningMessage: d.landingPage.warningMessage || "Don't panic! This was an authorized internal security awareness drill conducted by your organization. No real credentials or sensitive data were collected.",
+            nextStepsMessage: d.landingPage.nextStepsMessage || 'Your security team has logged this drill for awareness tracking. Next time you see a suspicious email, always use the Report Phishing link or forward it to your SOC / IT Security desk!',
+            reportSuccessTitle: d.landingPage.reportSuccessTitle || '🎉 Outstanding Job! You Reported a Phishing Simulation.',
+            reportSuccessMessage: d.landingPage.reportSuccessMessage || 'You correctly identified an authorized security drill and reported it. Your proactive vigilance protects our entire organization from real-world cyber attacks!',
+            redFlags: d.landingPage.redFlags && d.landingPage.redFlags.length > 0 ? d.landingPage.redFlags : [
+              { title: '1. Mismatched Sender Domain', description: 'Always verify the sender email address instead of just looking at the display name.' },
+              { title: '2. Artificial Urgency & Coercion', description: 'Attackers pressure you with tight deadlines like "Your account will be suspended within 2 hours" to bypass rational thought.' },
+              { title: '3. Suspicious Hyperlink Destination', description: 'Hover over links before clicking to preview the real destination URL in your email client status bar.' },
+              { title: '4. Unexpected Password / Action Request', description: 'Legitimate IT teams never ask you to verify passwords via unsolicited links.' },
+            ],
+          });
+        }
+        if (d.siem) {
+          setSiem({
+            enabled: d.siem.enabled ?? false,
+            host: d.siem.host || '',
+            port: d.siem.port || 514,
+            protocol: d.siem.protocol || 'UDP',
+            format: d.siem.format || 'LEEF_2.0',
+            facility: d.siem.facility || 'local0',
+          });
+        }
         if (d.ldap) {
           setLdap({
-            ...d.ldap,
-            bindPassword: d.ldap.hasPassword ? '[UNCHANGED]' : '',
+            enabled: d.ldap.enabled ?? false,
+            url: d.ldap.url || 'ldaps://ad.example.internal:636',
+            bindDN: d.ldap.bindDN || '',
+            bindPassword: '',
+            hasPassword: d.ldap.hasPassword || false,
+            baseDN: d.ldap.baseDN || 'DC=example,DC=internal',
+            timeout: d.ldap.timeout || 10000,
+            userFilter: d.ldap.userFilter || '',
           });
         }
         if (d.scheduledReports) {
           setScheduledReports({
-            ...d.scheduledReports,
+            enabled: d.scheduledReports.enabled ?? false,
             recipients: Array.isArray(d.scheduledReports.recipients)
               ? d.scheduledReports.recipients.join(', ')
               : d.scheduledReports.recipients || '',
+            frequency: d.scheduledReports.frequency || 'weekly_monday',
+            cron: d.scheduledReports.cron || '0 8 * * 1',
             senderProfile: d.scheduledReports.senderProfile?._id || d.scheduledReports.senderProfile || '',
+            subject: d.scheduledReports.subject || 'CyPhish Scheduled Awareness Report',
           });
         }
       }
 
-      if (profilesRes?.data) {
-        setSenderProfiles(profilesRes.data);
+      if (statsRes.success && statsRes.data) {
+        setAuditLogs(statsRes.data.recentAuditLogs || []);
       }
 
-      if (statsRes?.data?.recentAuditLogs) {
-        setAuditLogs(statsRes.data.recentAuditLogs);
+      if (profilesRes.success && profilesRes.data) {
+        setSenderProfiles(profilesRes.data || []);
       }
     } catch (err) {
-      setAlert({ type: 'error', message: 'Failed to load system settings: ' + err.message });
+      setAlert({ severity: 'error', message: err.message || 'Failed to load system settings' });
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  const handleSaveGeneral = async (e) => {
-    e?.preventDefault();
-    setSaving(true);
-    setAlert(null);
+  const loadUsers = async () => {
     try {
-      await updateSystemSettings({ general });
-      setAlert({ type: 'success', message: 'General system settings saved successfully.' });
+      const res = await getUsers();
+      if (res.success) {
+        setUsersList(res.data || []);
+      }
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || err.message });
+      console.warn('User load warning:', err.message);
+    }
+  };
+
+  const handleSaveAll = async () => {
+    try {
+      setSaving(true);
+      setAlert(null);
+
+      const payload = {
+        general,
+        landingPage,
+        siem,
+        ldap: {
+          ...ldap,
+          bindPassword: ldap.bindPassword ? ldap.bindPassword : '[UNCHANGED]',
+        },
+        scheduledReports: {
+          ...scheduledReports,
+          recipients: scheduledReports.recipients
+            .split(',')
+            .map((r) => r.trim())
+            .filter(Boolean),
+        },
+      };
+
+      const res = await updateSystemSettings(payload);
+      if (res.success) {
+        setAlert({ severity: 'success', message: 'System settings, custom landing page, and SIEM configs updated successfully.' });
+      }
+    } catch (err) {
+      setAlert({ severity: 'error', message: err.response?.data?.message || err.message });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleSaveLdap = async (e) => {
-    e?.preventDefault();
-    setSaving(true);
-    setAlert(null);
+  const handleAddRedFlag = () => {
+    setLandingPage({
+      ...landingPage,
+      redFlags: [
+        ...landingPage.redFlags,
+        { title: `Red Flag ${landingPage.redFlags.length + 1}`, description: 'Description of the suspicious indicator.' },
+      ],
+    });
+  };
+
+  const handleUpdateRedFlag = (index, field, value) => {
+    const updated = [...landingPage.redFlags];
+    updated[index] = { ...updated[index], [field]: value };
+    setLandingPage({ ...landingPage, redFlags: updated });
+  };
+
+  const handleRemoveRedFlag = (index) => {
+    const updated = landingPage.redFlags.filter((_, i) => i !== index);
+    setLandingPage({ ...landingPage, redFlags: updated });
+  };
+
+  const handleTestSiem = async () => {
+    if (!siem.host) {
+      setSiemTestResult({ success: false, message: 'Please enter SIEM Host/IP before testing.' });
+      return;
+    }
+    setTestingSiem(true);
+    setSiemTestResult(null);
     try {
-      const payload = {
-        ldap: {
-          ...ldap,
-          timeout: Number(ldap.timeout) || 10000,
-        },
-      };
-      await updateSystemSettings(payload);
-      setAlert({ type: 'success', message: 'Active Directory / LDAP settings saved successfully.' });
-      fetchSettings();
+      const res = await testSiemForwarding(siem);
+      setSiemTestResult(res);
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || err.message });
+      setSiemTestResult({ success: false, message: err.response?.data?.message || err.message });
     } finally {
-      setSaving(false);
+      setTestingSiem(false);
+    }
+  };
+
+  const handlePurgeRetention = async () => {
+    setPurgingRetention(true);
+    try {
+      const res = await triggerRetentionCleanup();
+      setAlert({
+        severity: 'success',
+        message: `Retention purge executed: ${res.data?.purged?.auditEvents || 0} audit logs, ${res.data?.purged?.campaignTracking || 0} drill records purged.`,
+      });
+    } catch (err) {
+      setAlert({ severity: 'error', message: err.message });
+    } finally {
+      setPurgingRetention(false);
     }
   };
 
@@ -191,718 +334,877 @@ const Settings = () => {
     setLdapTestResult(null);
     try {
       const res = await testLdapConnection({
-        url: ldap.url,
-        bindDN: ldap.bindDN,
-        bindPassword: ldap.bindPassword,
-        baseDN: ldap.baseDN,
-        timeout: Number(ldap.timeout) || 10000,
+        ...ldap,
+        bindPassword: ldap.bindPassword ? ldap.bindPassword : '[UNCHANGED]',
       });
-      setLdapTestResult({ success: true, message: res.message });
+      setLdapTestResult(res);
     } catch (err) {
-      setLdapTestResult({
-        success: false,
-        message: err.response?.data?.message || err.message,
-      });
+      setLdapTestResult({ success: false, message: err.response?.data?.message || err.message });
     } finally {
       setTestingLdap(false);
     }
   };
 
-  const handleSearchDirectory = async () => {
-    if (!directorySearchQuery.trim()) return;
-    setSearchingDirectory(true);
+  const handleCreateUserSubmit = async (e) => {
+    e.preventDefault();
+    setUserCreating(true);
     try {
-      const res = await searchDirectoryUsers({ query: directorySearchQuery.trim() });
-      if (res?.success) {
-        setDirectorySearchResults(res.data || []);
+      const res = await createUser(newUserData);
+      if (res.success) {
+        setUserModalOpen(false);
+        setNewUserData({ firstName: '', lastName: '', username: '', email: '', password: '', role: 'campaign_manager' });
+        loadUsers();
+        setAlert({ severity: 'success', message: res.message });
       }
     } catch (err) {
-      setAlert({ type: 'error', message: 'Directory search failed: ' + (err.response?.data?.message || err.message) });
+      setAlert({ severity: 'error', message: err.response?.data?.error || err.message });
     } finally {
-      setSearchingDirectory(false);
+      setUserCreating(false);
     }
   };
 
-  const handleSaveReports = async (e) => {
-    e?.preventDefault();
-    setSaving(true);
-    setAlert(null);
+  const handleToggleLock = async (id) => {
     try {
-      const recipientsArray = scheduledReports.recipients
-        .split(',')
-        .map((r) => r.trim())
-        .filter(Boolean);
-
-      let cronExpression = scheduledReports.cron;
-      if (scheduledReports.frequency === 'daily') cronExpression = '0 8 * * *';
-      else if (scheduledReports.frequency === 'weekly_monday') cronExpression = '0 8 * * 1';
-      else if (scheduledReports.frequency === 'weekly_friday') cronExpression = '0 17 * * 5';
-      else if (scheduledReports.frequency === 'monthly') cronExpression = '0 8 1 * *';
-
-      const payload = {
-        scheduledReports: {
-          ...scheduledReports,
-          recipients: recipientsArray,
-          cron: cronExpression,
-        },
-      };
-
-      await updateSystemSettings(payload);
-      setAlert({ type: 'success', message: 'Scheduled reports configuration saved successfully.' });
+      const res = await toggleLockUser(id);
+      if (res.success) {
+        loadUsers();
+      }
     } catch (err) {
-      setAlert({ type: 'error', message: err.response?.data?.message || err.message });
-    } finally {
-      setSaving(false);
+      setAlert({ severity: 'error', message: err.response?.data?.error || err.message });
     }
   };
 
-  const handleSendTestReport = async () => {
-    setTestingReport(true);
-    setReportTestResult(null);
+  const handleDeleteUser = async (id) => {
     try {
-      const res = await sendTestReport({
-        recipientEmail: reportTestEmail || undefined,
-        senderProfileId: scheduledReports.senderProfile || undefined,
-      });
-      setReportTestResult({ success: true, message: res.message });
+      const res = await deleteUser(id);
+      if (res.success) {
+        loadUsers();
+        setAlert({ severity: 'success', message: res.message });
+      }
     } catch (err) {
-      setReportTestResult({
-        success: false,
-        message: err.response?.data?.message || err.message,
-      });
-    } finally {
-      setTestingReport(false);
+      setAlert({ severity: 'error', message: err.response?.data?.error || err.message });
     }
   };
+
+  const getRoleChip = (role) => {
+    switch (role) {
+      case 'admin':
+        return <Chip size="small" label="👑 Main Admin" sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 700, border: '1px solid rgba(59, 130, 246, 0.4)' }} />;
+      case 'campaign_manager':
+        return <Chip size="small" label="🛠️ Security Engineer" sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700, border: '1px solid rgba(16, 185, 129, 0.4)' }} />;
+      default:
+        return <Chip size="small" label="👁️ Auditor / Viewer" sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 700, border: '1px solid rgba(245, 158, 11, 0.4)' }} />;
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#0b0f19', justifyContent: 'center', alignItems: 'center' }}>
+        <CircularProgress sx={{ color: '#3b82f6' }} />
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#0b0f19' }}>
       <Sidebar />
-
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
-        <Container maxWidth="lg" sx={{ flexGrow: 1, mt: '96px', mb: 4 }}>
-          {/* Header */}
-          <Box sx={{ mb: 3 }}>
-            <Typography
-              variant="h4"
+        <Container maxWidth="xl" sx={{ flexGrow: 1, mt: '80px', mb: 4, px: { xs: 2, sm: 3 } }}>
+          
+          {/* Top Header */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+            <Box>
+              <Typography variant="h4" sx={{ fontWeight: 700, color: '#f8fafc', fontSize: { xs: '1.4rem', md: '1.8rem' }, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <SettingsIcon sx={{ color: '#3b82f6', fontSize: '2rem' }} />
+                System Administration & RBAC Portal
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.5 }}>
+                Configure delegated engineer roles, customized landing pages, SIEM network syslog, and 180-day retention.
+              </Typography>
+            </Box>
+
+            <Button
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSaveAll}
+              disabled={saving}
               sx={{
+                bgcolor: '#3b82f6',
+                color: '#fff',
                 fontWeight: 700,
-                color: '#0f172a',
-                fontSize: { xs: '1.4rem', md: '1.8rem' },
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
+                px: 3,
+                py: 1.2,
+                borderRadius: '10px',
+                '&:hover': { bgcolor: '#2563eb' },
               }}
             >
-              <SettingsIcon sx={{ color: '#2563eb', fontSize: 32 }} /> System Settings & Administration
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#64748b', mt: 0.5 }}>
-              Manage Active Directory / LDAP synchronization, scheduled email reports, warning URLs, and SIEM logging.
-            </Typography>
+              {saving ? 'Saving System Changes...' : 'Save All Settings'}
+            </Button>
           </Box>
 
           {alert && (
             <Alert
-              severity={alert.type}
+              severity={alert.severity}
               onClose={() => setAlert(null)}
-              sx={{ mb: 3, borderRadius: '12px' }}
+              sx={{
+                mb: 3,
+                bgcolor: alert.severity === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                color: alert.severity === 'success' ? '#34d399' : '#f87171',
+                border: alert.severity === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+              }}
             >
               {alert.message}
             </Alert>
           )}
 
-          {/* Navigation Tabs */}
-          <Paper sx={{ borderRadius: '16px', mb: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-            <Tabs
-              value={tabIndex}
-              onChange={(e, val) => setTabIndex(val)}
-              variant="scrollable"
-              scrollButtons="auto"
-              sx={{
-                borderBottom: 1,
-                borderColor: 'divider',
-                '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, fontSize: '0.9rem', py: 2 },
-                '& .Mui-selected': { color: '#2563eb' },
-              }}
-            >
-              <Tab icon={<SettingsIcon />} iconPosition="start" label="General & Public URL" />
-              <Tab icon={<PeopleIcon />} iconPosition="start" label="Active Directory / LDAP" />
-              <Tab icon={<ReportIcon />} iconPosition="start" label="Scheduled Reports" />
-              <Tab icon={<AIIcon />} iconPosition="start" label="AI & Integrations" />
-              <Tab icon={<AuditIcon />} iconPosition="start" label="Audit & SIEM Logs" />
-            </Tabs>
-          </Paper>
-
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-              <CircularProgress />
+          {/* Settings Tabs */}
+          <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px' }}>
+            <Box sx={{ borderBottom: '1px solid rgba(255, 255, 255, 0.08)', px: 3, pt: 2 }}>
+              <Tabs
+                value={tabIndex}
+                onChange={(e, val) => setTabIndex(val)}
+                sx={{
+                  '& .MuiTab-root': {
+                    color: '#94a3b8',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    fontSize: '0.9rem',
+                    minHeight: 44,
+                    '&.Mui-selected': { color: '#60a5fa' },
+                  },
+                  '& .MuiTabs-indicator': { bgcolor: '#3b82f6', height: 3 },
+                }}
+              >
+                <Tab label={`👥 Users & RBAC (${usersList.length})`} />
+                <Tab label="🎯 Landing Page & Warning Customizer" />
+                <Tab label="🛡️ SIEM & Syslog Forwarder" />
+                <Tab label="⚙️ General & 180d Retention" />
+                <Tab label="🗂️ Active Directory / LDAP" />
+                <Tab label="📊 Automated Reports" />
+                <Tab label="📜 Audit Trail" />
+              </Tabs>
             </Box>
-          ) : (
-            <>
-              {/* TAB 0: GENERAL SETTINGS */}
+
+            <CardContent sx={{ p: 4 }}>
+              
+              {/* Tab 0: Users & RBAC */}
               {tabIndex === 0 && (
-                <Card sx={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h6" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>
-                      General Platform Configuration
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Configure public URLs for email tracking links, reverse proxy trust, and enterprise SIEM logging.
-                    </Typography>
-
-                    <form onSubmit={handleSaveGeneral}>
-                      <Grid container spacing={3}>
-                        <Grid item xs={12}>
-                          <TextField
-                            fullWidth
-                            label="Campaign Public Warning URL"
-                            value={general.publicUrl}
-                            onChange={(e) => setGeneral({ ...general, publicUrl: e.target.value })}
-                            placeholder="https://192.168.88.11 or https://cyphish.yourdomain.com"
-                            helperText="Base HTTPS URL embedded into simulated phishing emails for click tracking and warning pages."
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                          <TextField
-                            fullWidth
-                            label="Organization Name"
-                            value={general.organizationName}
-                            onChange={(e) => setGeneral({ ...general, organizationName: e.target.value })}
-                            placeholder="Acme Financial Services"
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                          <Box sx={{ p: 2, border: '1px solid #e2e8f0', borderRadius: '12px', bgcolor: '#f8fafc' }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={general.trustProxy}
-                                  onChange={(e) => setGeneral({ ...general, trustProxy: e.target.checked })}
-                                  color="primary"
-                                />
-                              }
-                              label="Trust Reverse Proxy (Nginx / Load Balancer)"
-                            />
-                            <Typography variant="caption" color="text.secondary" display="block">
-                              Extracts real client IP addresses from X-Forwarded-For headers when running behind Nginx.
-                            </Typography>
-                          </Box>
-                        </Grid>
-
-                        <Grid item xs={12}>
-                          <Box sx={{ p: 2, border: '1px solid #e2e8f0', borderRadius: '12px', bgcolor: '#f8fafc' }}>
-                            <FormControlLabel
-                              control={
-                                <Switch
-                                  checked={general.siemLeefStdout}
-                                  onChange={(e) => setGeneral({ ...general, siemLeefStdout: e.target.checked })}
-                                  color="primary"
-                                />
-                              }
-                              label="Stream SIEM Events to Container Logs (LEEF 2.0)"
-                            />
-                            <Typography variant="caption" color="text.secondary" display="block">
-                              Outputs audit and click simulation events in RFC LEEF 2.0 format to stdout for log agents (Splunk, QRadar, Filebeat).
-                            </Typography>
-                          </Box>
-                        </Grid>
-
-                        <Grid item xs={12}>
-                          <Button
-                            type="submit"
-                            variant="contained"
-                            disabled={saving}
-                            startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
-                            sx={{
-                              borderRadius: '12px',
-                              px: 4,
-                              py: 1.2,
-                              fontWeight: 600,
-                              bgcolor: '#2563eb',
-                              '&:hover': { bgcolor: '#1d4ed8' },
-                            }}
-                          >
-                            Save General Settings
-                          </Button>
-                        </Grid>
-                      </Grid>
-                    </form>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* TAB 1: ACTIVE DIRECTORY / LDAP */}
-              {tabIndex === 1 && (
-                <Card sx={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <div>
-                        <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a' }}>
-                          Active Directory / LDAP Directory Sync
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Connect CyPhish to your corporate Active Directory or OpenLDAP server to dynamically import people, OUs, and security groups.
-                        </Typography>
-                      </div>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={ldap.enabled}
-                            onChange={(e) => setLdap({ ...ldap, enabled: e.target.checked })}
-                            color="success"
-                          />
-                        }
-                        label={<Typography fontWeight={600}>{ldap.enabled ? 'LDAP Enabled' : 'LDAP Disabled'}</Typography>}
-                      />
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Box>
+                      <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                        Delegated Administrator & Engineer Accounts
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                        Super Administrator is provisioned during startup. Create and manage delegated Security Engineers and Auditors below.
+                      </Typography>
                     </Box>
 
-                    {ldapTestResult && (
-                      <Alert
-                        severity={ldapTestResult.success ? 'success' : 'error'}
-                        onClose={() => setLdapTestResult(null)}
-                        sx={{ mb: 3, borderRadius: '12px' }}
-                      >
-                        {ldapTestResult.message}
-                      </Alert>
-                    )}
+                    <Button
+                      variant="contained"
+                      startIcon={<PersonAddIcon />}
+                      onClick={() => setUserModalOpen(true)}
+                      sx={{ bgcolor: '#3b82f6', color: '#fff', fontWeight: 700, borderRadius: '10px' }}
+                    >
+                      Add Platform User
+                    </Button>
+                  </Box>
 
-                    <form onSubmit={handleSaveLdap}>
-                      <Grid container spacing={3}>
-                        <Grid item xs={12} sm={8}>
-                          <TextField
-                            fullWidth
-                            label="LDAP Server URL"
-                            value={ldap.url}
-                            onChange={(e) => setLdap({ ...ldap, url: e.target.value })}
-                            placeholder="ldaps://dc01.example.internal:636 or ldap://192.168.1.10:389"
-                            helperText="Use ldaps:// for encrypted connections. Port 636 (SSL) or 389 (Plain)."
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
+                  <TableContainer sx={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px' }}>
+                    <Table>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>User</TableCell>
+                          <TableCell>Username</TableCell>
+                          <TableCell>Email</TableCell>
+                          <TableCell align="center">Role</TableCell>
+                          <TableCell align="center">Account Status</TableCell>
+                          <TableCell align="right">Actions</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {usersList.map((u) => (
+                          <TableRow key={u._id} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                            <TableCell sx={{ fontWeight: 600, color: '#f8fafc' }}>
+                              {u.firstName} {u.lastName || ''} {u.isRoot && <Chip size="small" label="ROOT" sx={{ bgcolor: 'rgba(59, 130, 246, 0.3)', color: '#93c5fd', fontSize: '0.65rem', ml: 1 }} />}
+                            </TableCell>
+                            <TableCell sx={{ color: '#94a3b8', fontFamily: 'monospace' }}>{u.username}</TableCell>
+                            <TableCell sx={{ color: '#cbd5e1' }}>{u.email}</TableCell>
+                            <TableCell align="center">{getRoleChip(u.role)}</TableCell>
+                            <TableCell align="center">
+                              {u.accountLocked ? (
+                                <Chip size="small" label="🔒 Locked" sx={{ bgcolor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 700 }} />
+                              ) : (
+                                <Chip size="small" label="Active" sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 600 }} />
+                              )}
+                            </TableCell>
+                            <TableCell align="right">
+                              {!u.isRoot && (
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                                  <Tooltip title={u.accountLocked ? 'Unlock Account' : 'Lock Account'}>
+                                    <IconButton size="small" onClick={() => handleToggleLock(u._id)} sx={{ color: u.accountLocked ? '#34d399' : '#f59e0b' }}>
+                                      {u.accountLocked ? <LockOpenIcon fontSize="small" /> : <LockIcon fontSize="small" />}
+                                    </IconButton>
+                                  </Tooltip>
+                                  <Tooltip title="Delete User">
+                                    <IconButton size="small" onClick={() => handleDeleteUser(u._id)} sx={{ color: '#ef4444' }}>
+                                      <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
 
-                        <Grid item xs={12} sm={4}>
-                          <TextField
-                            fullWidth
-                            label="Timeout (ms)"
-                            type="number"
-                            value={ldap.timeout}
-                            onChange={(e) => setLdap({ ...ldap, timeout: Number(e.target.value) })}
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
+              {/* Tab 1: Landing Page & Teachable Moment Customizer */}
+              {tabIndex === 1 && (
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                    Landing Page & Teachable Moment Customizer
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+                    Customize the headlines, educational warning messages, and red flags displayed to employees when they click or report a phishing simulation.
+                  </Typography>
 
-                        <Grid item xs={12} sm={6}>
-                          <TextField
-                            fullWidth
-                            label="Bind DN (Service Account)"
-                            value={ldap.bindDN}
-                            onChange={(e) => setLdap({ ...ldap, bindDN: e.target.value })}
-                            placeholder="CN=svc_cyphish,OU=Service Accounts,DC=example,DC=internal"
-                            helperText="Distinguished Name of a read-only directory service account."
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                          <TextField
-                            fullWidth
-                            label="Bind Password"
-                            type="password"
-                            value={ldap.bindPassword}
-                            onChange={(e) => setLdap({ ...ldap, bindPassword: e.target.value })}
-                            placeholder={ldap.hasPassword ? '•••••••• (unchanged)' : 'Enter Service Account Password'}
-                            helperText={ldap.hasPassword ? 'Leave as [UNCHANGED] to keep current password.' : 'Read-only service account password.'}
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12}>
-                          <TextField
-                            fullWidth
-                            label="Base DN (Search Root)"
-                            value={ldap.baseDN}
-                            onChange={(e) => setLdap({ ...ldap, baseDN: e.target.value })}
-                            placeholder="DC=example,DC=internal"
-                            helperText="Top-level domain component where user objects reside."
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12}>
-                          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                            <Button
-                              type="submit"
-                              variant="contained"
-                              disabled={saving}
-                              startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
-                              sx={{
-                                borderRadius: '12px',
-                                px: 3,
-                                py: 1.2,
-                                fontWeight: 600,
-                                bgcolor: '#2563eb',
-                                '&:hover': { bgcolor: '#1d4ed8' },
-                              }}
-                            >
-                              Save LDAP Settings
-                            </Button>
-
-                            <Button
-                              variant="outlined"
-                              onClick={handleTestLdap}
-                              disabled={testingLdap}
-                              startIcon={testingLdap ? <CircularProgress size={20} /> : <CheckCircleIcon />}
-                              sx={{
-                                borderRadius: '12px',
-                                px: 3,
-                                py: 1.2,
-                                fontWeight: 600,
-                                borderColor: '#059669',
-                                color: '#059669',
-                                '&:hover': { borderColor: '#047857', bgcolor: 'rgba(5, 150, 105, 0.04)' },
-                              }}
-                            >
-                              {testingLdap ? 'Testing Connection...' : 'Test LDAP Connection'}
-                            </Button>
-                          </Box>
-                        </Grid>
-                      </Grid>
-                    </form>
-
-                    <Divider sx={{ my: 4 }} />
-
-                    {/* Directory Search Preview Tool */}
-                    <Box>
-                      <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a', mb: 1 }}>
-                        Active Directory Search & Query Preview
+                  <Grid container spacing={3}>
+                    
+                    {/* Warning Page Customizer */}
+                    <Grid item xs={12}>
+                      <Typography variant="subtitle1" sx={{ color: '#f87171', fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        🚨 Phishing Click Warning (Teachable Moment)
                       </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Test finding users or security groups directly against the configured Active Directory server.
-                      </Typography>
+                    </Grid>
 
-                      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          placeholder="Search by name, email, or sAMAccountName (e.g. 'john' or 'finance')"
-                          value={directorySearchQuery}
-                          onChange={(e) => setDirectorySearchQuery(e.target.value)}
-                          onKeyPress={(e) => e.key === 'Enter' && handleSearchDirectory()}
-                          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                        />
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Warning Page Headline"
+                        value={landingPage.warningTitle}
+                        onChange={(e) => setLandingPage({ ...landingPage, warningTitle: e.target.value })}
+                        helperText="Main headline displayed to employees upon clicking a drill link."
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={2}
+                        label="Educational Warning Message"
+                        value={landingPage.warningMessage}
+                        onChange={(e) => setLandingPage({ ...landingPage, warningMessage: e.target.value })}
+                        helperText="Reassures the user that this was an authorized drill and no passwords were saved."
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={2}
+                        label="Next Steps & IT Security Desk Notice"
+                        value={landingPage.nextStepsMessage}
+                        onChange={(e) => setLandingPage({ ...landingPage, nextStepsMessage: e.target.value })}
+                        helperText="Instructions on who to contact or how to report suspicious emails in the future."
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.08)' }} />
+                    </Grid>
+
+                    {/* Red Flags Customizer */}
+                    <Grid item xs={12}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                          🚩 Educational Red Flags Checklist
+                        </Typography>
                         <Button
-                          variant="contained"
-                          onClick={handleSearchDirectory}
-                          disabled={searchingDirectory}
-                          startIcon={searchingDirectory ? <CircularProgress size={16} /> : <SearchIcon />}
-                          sx={{ borderRadius: '12px', px: 3, bgcolor: '#334155' }}
+                          size="small"
+                          startIcon={<AddIcon />}
+                          onClick={handleAddRedFlag}
+                          sx={{ color: '#60a5fa', fontWeight: 600 }}
                         >
-                          Search
+                          Add Red Flag
+                        </Button>
+                      </Box>
+                    </Grid>
+
+                    {landingPage.redFlags?.map((flag, idx) => (
+                      <Grid item xs={12} sm={6} key={idx}>
+                        <Card sx={{ bgcolor: '#0b0f19', border: '1px solid rgba(255,255,255,0.08)', p: 2 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700 }}>
+                              Red Flag Item #{idx + 1}
+                            </Typography>
+                            {landingPage.redFlags.length > 1 && (
+                              <IconButton size="small" onClick={() => handleRemoveRedFlag(idx)} sx={{ color: '#ef4444' }}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            )}
+                          </Box>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="Title"
+                            value={flag.title}
+                            onChange={(e) => handleUpdateRedFlag(idx, 'title', e.target.value)}
+                            sx={{ mb: 1.5 }}
+                          />
+                          <TextField
+                            fullWidth
+                            size="small"
+                            multiline
+                            rows={2}
+                            label="Description"
+                            value={flag.description}
+                            onChange={(e) => handleUpdateRedFlag(idx, 'description', e.target.value)}
+                          />
+                        </Card>
+                      </Grid>
+                    ))}
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 1, borderColor: 'rgba(255,255,255,0.08)' }} />
+                    </Grid>
+
+                    {/* Report Confirmation Customizer */}
+                    <Grid item xs={12}>
+                      <Typography variant="subtitle1" sx={{ color: '#34d399', fontWeight: 700, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                        🌟 Positive Report Confirmation (Security Champion)
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Report Success Headline"
+                        value={landingPage.reportSuccessTitle}
+                        onChange={(e) => setLandingPage({ ...landingPage, reportSuccessTitle: e.target.value })}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={2}
+                        label="Report Success Message"
+                        value={landingPage.reportSuccessMessage}
+                        onChange={(e) => setLandingPage({ ...landingPage, reportSuccessMessage: e.target.value })}
+                      />
+                    </Grid>
+
+                  </Grid>
+                </Box>
+              )}
+
+              {/* Tab 2: SIEM & Syslog Forwarder */}
+              {tabIndex === 2 && (
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                    Direct Network Syslog / SIEM Forwarder (LEEF 2.0 / CEF)
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+                    Stream all drill clicks, credential captures, and user reports in real-time directly to your enterprise SIEM (IBM QRadar, Splunk, AlienVault).
+                  </Typography>
+
+                  <Grid container spacing={3}>
+                    <Grid item xs={12}>
+                      <FormControlLabel
+                        control={<Switch checked={siem.enabled} onChange={(e) => setSiem({ ...siem, enabled: e.target.checked })} color="primary" />}
+                        label={<Typography variant="body1" sx={{ color: '#f8fafc', fontWeight: 600 }}>Enable Real-Time Syslog Forwarding to SIEM</Typography>}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={8}>
+                      <TextField
+                        fullWidth
+                        label="SIEM Server Host / IP Address"
+                        placeholder="e.g. 10.0.50.100 or siem.corp.internal"
+                        value={siem.host}
+                        onChange={(e) => setSiem({ ...siem, host: e.target.value })}
+                        disabled={!siem.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Syslog Port"
+                        placeholder="514"
+                        value={siem.port}
+                        onChange={(e) => setSiem({ ...siem, port: e.target.value })}
+                        disabled={!siem.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth disabled={!siem.enabled}>
+                        <InputLabel sx={{ color: '#94a3b8' }}>Network Protocol</InputLabel>
+                        <Select
+                          value={siem.protocol}
+                          label="Network Protocol"
+                          onChange={(e) => setSiem({ ...siem, protocol: e.target.value })}
+                          sx={{ bgcolor: '#0b0f19' }}
+                        >
+                          <MenuItem value="UDP">UDP (Standard RFC 5424 - Port 514)</MenuItem>
+                          <MenuItem value="TCP">TCP (Reliable Delivery)</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth disabled={!siem.enabled}>
+                        <InputLabel sx={{ color: '#94a3b8' }}>Event Log Format</InputLabel>
+                        <Select
+                          value={siem.format}
+                          label="Event Log Format"
+                          onChange={(e) => setSiem({ ...siem, format: e.target.value })}
+                          sx={{ bgcolor: '#0b0f19' }}
+                        >
+                          <MenuItem value="LEEF_2.0">LEEF 2.0 (IBM QRadar / AlienVault / LogRhythm)</MenuItem>
+                          <MenuItem value="CEF">CEF (ArcSight / Splunk / Sentinel)</MenuItem>
+                          <MenuItem value="JSON">Raw JSON Envelope</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Button
+                          variant="outlined"
+                          startIcon={testingSiem ? <CircularProgress size={16} sx={{ color: '#3b82f6' }} /> : <PlayArrowIcon />}
+                          onClick={handleTestSiem}
+                          disabled={testingSiem || !siem.enabled || !siem.host}
+                          sx={{ borderColor: 'rgba(59, 130, 246, 0.5)', color: '#60a5fa', fontWeight: 700 }}
+                        >
+                          {testingSiem ? 'Dispatching...' : 'Send Test LEEF Event'}
                         </Button>
                       </Box>
 
-                      {directorySearchResults.length > 0 && (
-                        <TableContainer component={Paper} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0', maxHeight: 320 }}>
-                          <Table size="small" stickyHeader>
-                            <TableHead>
-                              <TableRow>
-                                <TableCell><strong>Name</strong></TableCell>
-                                <TableCell><strong>Email</strong></TableCell>
-                                <TableCell><strong>Department</strong></TableCell>
-                                <TableCell><strong>Title / Role</strong></TableCell>
-                                <TableCell><strong>Directory Groups</strong></TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {directorySearchResults.map((user, idx) => (
-                                <TableRow key={idx} hover>
-                                  <TableCell>{user.firstName} {user.lastName}</TableCell>
-                                  <TableCell>{user.email}</TableCell>
-                                  <TableCell>{user.department || '—'}</TableCell>
-                                  <TableCell>{user.role || '—'}</TableCell>
-                                  <TableCell>
-                                    {user.directoryGroups?.length > 0 ? (
-                                      <Chip size="small" label={`${user.directoryGroups.length} groups`} />
-                                    ) : '—'}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </TableContainer>
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* TAB 2: SCHEDULED REPORTS */}
-              {tabIndex === 2 && (
-                <Card sx={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <div>
-                        <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a' }}>
-                          Automated Scheduled Reports
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Automatically dispatch executive awareness summaries, vulnerability trends, and click metrics to CISOs, SOC, and HR teams on a recurring schedule.
-                        </Typography>
-                      </div>
-                      <FormControlLabel
-                        control={
-                          <Switch
-                            checked={scheduledReports.enabled}
-                            onChange={(e) => setScheduledReports({ ...scheduledReports, enabled: e.target.checked })}
-                            color="success"
-                          />
-                        }
-                        label={<Typography fontWeight={600}>{scheduledReports.enabled ? 'Reports Active' : 'Reports Paused'}</Typography>}
-                      />
-                    </Box>
-
-                    {reportTestResult && (
-                      <Alert
-                        severity={reportTestResult.success ? 'success' : 'error'}
-                        onClose={() => setReportTestResult(null)}
-                        sx={{ mb: 3, borderRadius: '12px' }}
-                      >
-                        {reportTestResult.message}
-                      </Alert>
-                    )}
-
-                    <form onSubmit={handleSaveReports}>
-                      <Grid container spacing={3}>
-                        <Grid item xs={12} sm={6}>
-                          <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}>
-                            <InputLabel>Delivery Frequency</InputLabel>
-                            <Select
-                              value={scheduledReports.frequency}
-                              label="Delivery Frequency"
-                              onChange={(e) => setScheduledReports({ ...scheduledReports, frequency: e.target.value })}
-                            >
-                              <MenuItem value="daily">Daily at 08:00 AM</MenuItem>
-                              <MenuItem value="weekly_monday">Weekly on Mondays (08:00 AM)</MenuItem>
-                              <MenuItem value="weekly_friday">Weekly on Fridays (05:00 PM)</MenuItem>
-                              <MenuItem value="monthly">Monthly (1st day of month)</MenuItem>
-                              <MenuItem value="custom">Custom Cron Expression</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Grid>
-
-                        <Grid item xs={12} sm={6}>
-                          <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}>
-                            <InputLabel>Dispatch SMTP Sender Profile</InputLabel>
-                            <Select
-                              value={scheduledReports.senderProfile}
-                              label="Dispatch SMTP Sender Profile"
-                              onChange={(e) => setScheduledReports({ ...scheduledReports, senderProfile: e.target.value })}
-                            >
-                              {senderProfiles.map((p) => (
-                                <MenuItem key={p._id} value={p._id}>
-                                  {p.senderName} ({p.email}) - {p.host}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                        </Grid>
-
-                        {scheduledReports.frequency === 'custom' && (
-                          <Grid item xs={12}>
-                            <TextField
-                              fullWidth
-                              label="Custom Cron Expression"
-                              value={scheduledReports.cron}
-                              onChange={(e) => setScheduledReports({ ...scheduledReports, cron: e.target.value })}
-                              placeholder="0 8 * * 1"
-                              helperText="Standard 5-field cron expression: (minute hour day-of-month month day-of-week)"
-                              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                            />
-                          </Grid>
-                        )}
-
-                        <Grid item xs={12}>
-                          <TextField
-                            fullWidth
-                            label="Recipient Email Addresses"
-                            value={scheduledReports.recipients}
-                            onChange={(e) => setScheduledReports({ ...scheduledReports, recipients: e.target.value })}
-                            placeholder="ciso@company.com, soc@company.com, hr-training@company.com"
-                            helperText="Comma-separated list of recipient email addresses who will receive the summary report."
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12}>
-                          <TextField
-                            fullWidth
-                            label="Email Subject Line"
-                            value={scheduledReports.subject}
-                            onChange={(e) => setScheduledReports({ ...scheduledReports, subject: e.target.value })}
-                            placeholder="CyPhish Scheduled Awareness Report"
-                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                          />
-                        </Grid>
-
-                        <Grid item xs={12}>
-                          <Button
-                            type="submit"
-                            variant="contained"
-                            disabled={saving}
-                            startIcon={saving ? <CircularProgress size={20} /> : <SaveIcon />}
-                            sx={{
-                              borderRadius: '12px',
-                              px: 4,
-                              py: 1.2,
-                              fontWeight: 600,
-                              bgcolor: '#2563eb',
-                              '&:hover': { bgcolor: '#1d4ed8' },
-                            }}
-                          >
-                            Save Report Settings
-                          </Button>
-                        </Grid>
-                      </Grid>
-                    </form>
-
-                    <Divider sx={{ my: 4 }} />
-
-                    {/* Instant Test Dispatch Tool */}
-                    <Box sx={{ p: 3, bgcolor: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#0f172a', mb: 1 }}>
-                        🚀 Send Instant Test Report
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Trigger an immediate test report to your email inbox right now to verify SMTP deliverability and formatting.
-                      </Typography>
-
-                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-                        <TextField
-                          size="small"
-                          label="Test Recipient Email (optional override)"
-                          value={reportTestEmail}
-                          onChange={(e) => setReportTestEmail(e.target.value)}
-                          placeholder="your-email@company.com"
-                          sx={{ minWidth: 320, '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
-                        />
-                        <Button
-                          variant="contained"
-                          onClick={handleSendTestReport}
-                          disabled={testingReport || !scheduledReports.senderProfile}
-                          startIcon={testingReport ? <CircularProgress size={16} /> : <SendIcon />}
+                      {siemTestResult && (
+                        <Alert
+                          severity={siemTestResult.success ? 'success' : 'error'}
                           sx={{
-                            borderRadius: '12px',
-                            px: 3,
-                            bgcolor: '#059669',
-                            fontWeight: 600,
-                            '&:hover': { bgcolor: '#047857' },
+                            mt: 2,
+                            bgcolor: siemTestResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                            color: siemTestResult.success ? '#34d399' : '#f87171',
+                            border: siemTestResult.success ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
                           }}
                         >
-                          {testingReport ? 'Dispatching Test...' : 'Send Test Report Now'}
+                          {siemTestResult.message}
+                        </Alert>
+                      )}
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
+
+              {/* Tab 3: General & 180d Retention */}
+              {tabIndex === 3 && (
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                    General Settings & Data Retention Engine
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+                    Configure organization branding, public campaign landing URLs, and automated 180-day compliance data retention.
+                  </Typography>
+
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Public Campaign / Phish Domain URL"
+                        placeholder="https://phish.yourdomain.com"
+                        value={general.publicUrl}
+                        onChange={(e) => setGeneral({ ...general, publicUrl: e.target.value })}
+                        helperText="Used to generate warning page links and tracking pixels in emails."
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Organization Branding Name"
+                        value={general.organizationName}
+                        onChange={(e) => setGeneral({ ...general, organizationName: e.target.value })}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 2, borderColor: 'rgba(255,255,255,0.08)' }} />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.5 }}>
+                        Data & Audit Log Retention Policy
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+                        SOC 2 / ISO 27001 standard data retention. Events and tracking logs older than this duration are automatically purged.
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Data Retention Period (Days)"
+                        value={general.logRetentionDays}
+                        onChange={(e) => setGeneral({ ...general, logRetentionDays: e.target.value })}
+                        helperText="Default: 180 days (6 months retention window)"
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <Box sx={{ bgcolor: '#0b0f19', p: 3, borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', mt: { sm: 4 } }}>
+                        <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                          Immediate Retention Cleanup
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 2 }}>
+                          Manually trigger a database vacuum to purge all audit events and tracking records older than {general.logRetentionDays} days.
+                        </Typography>
+                        <Button
+                          variant="outlined"
+                          color="warning"
+                          onClick={handlePurgeRetention}
+                          disabled={purgingRetention}
+                          sx={{ fontWeight: 700, borderRadius: '8px' }}
+                        >
+                          {purgingRetention ? 'Purging Expired Records...' : 'Execute Retention Purge'}
                         </Button>
                       </Box>
-                    </Box>
-                  </CardContent>
-                </Card>
+                    </Grid>
+                  </Grid>
+                </Box>
               )}
 
-              {/* TAB 3: AI & INTEGRATIONS */}
-              {tabIndex === 3 && (
-                <Card sx={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Typography variant="h6" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>
-                      AI & LLM Model Integrations (Ollama, OpenAI, Gemini)
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                      Configure local or cloud AI models (such as Ollama on private infrastructure) for template generation and scenario drafting.
-                    </Typography>
-                    <IntegrationsTab />
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* TAB 4: AUDIT & SIEM LOGS */}
+              {/* Tab 4: Active Directory / LDAP */}
               {tabIndex === 4 && (
-                <Card sx={{ borderRadius: '16px', boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
-                  <CardContent sx={{ p: 4 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                      <div>
-                        <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a' }}>
-                          Administrative Audit Trail & SIEM Events
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Persistent log of all administrative modifications, campaign launches, approvals, and security settings changes.
-                        </Typography>
-                      </div>
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                    Active Directory & LDAP Directory Synchronization
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+                    Connect to corporate Active Directory to automatically synchronize usernames, emails, departments, OUs, and security groups.
+                  </Typography>
+
+                  <Grid container spacing={3}>
+                    <Grid item xs={12}>
+                      <FormControlLabel
+                        control={<Switch checked={ldap.enabled} onChange={(e) => setLdap({ ...ldap, enabled: e.target.checked })} color="primary" />}
+                        label={<Typography variant="body1" sx={{ color: '#f8fafc', fontWeight: 600 }}>Enable Active Directory / LDAP Integration</Typography>}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={8}>
+                      <TextField
+                        fullWidth
+                        label="LDAPS Server URL"
+                        placeholder="ldaps://ad.corp.internal:636"
+                        value={ldap.url}
+                        onChange={(e) => setLdap({ ...ldap, url: e.target.value })}
+                        disabled={!ldap.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Timeout (ms)"
+                        value={ldap.timeout}
+                        onChange={(e) => setLdap({ ...ldap, timeout: e.target.value })}
+                        disabled={!ldap.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        label="Bind DN / Service Account"
+                        placeholder="CN=CyPhish-Service,OU=ServiceAccounts,DC=corp,DC=internal"
+                        value={ldap.bindDN}
+                        onChange={(e) => setLdap({ ...ldap, bindDN: e.target.value })}
+                        disabled={!ldap.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        type="password"
+                        label="Bind Password"
+                        placeholder={ldap.hasPassword ? '•••••••• (Saved)' : 'Enter password'}
+                        value={ldap.bindPassword}
+                        onChange={(e) => setLdap({ ...ldap, bindPassword: e.target.value })}
+                        disabled={!ldap.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        label="Base DN"
+                        placeholder="DC=corp,DC=internal"
+                        value={ldap.baseDN}
+                        onChange={(e) => setLdap({ ...ldap, baseDN: e.target.value })}
+                        disabled={!ldap.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
                       <Button
                         variant="outlined"
-                        size="small"
-                        onClick={fetchSettings}
-                        startIcon={<RefreshIcon />}
-                        sx={{ borderRadius: '10px' }}
+                        startIcon={testingLdap ? <CircularProgress size={16} sx={{ color: '#3b82f6' }} /> : <PlayArrowIcon />}
+                        onClick={handleTestLdap}
+                        disabled={testingLdap || !ldap.enabled}
+                        sx={{ borderColor: 'rgba(59, 130, 246, 0.5)', color: '#60a5fa', fontWeight: 700 }}
                       >
-                        Refresh Logs
+                        {testingLdap ? 'Testing LDAP Socket...' : 'Test Active Directory Connection'}
                       </Button>
-                    </Box>
 
-                    {auditLogs.length === 0 ? (
-                      <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
-                        No audit events recorded yet.
-                      </Typography>
-                    ) : (
-                      <TableContainer component={Paper} sx={{ borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                              <TableCell><strong>Timestamp</strong></TableCell>
-                              <TableCell><strong>Action</strong></TableCell>
-                              <TableCell><strong>Actor</strong></TableCell>
-                              <TableCell><strong>Resource</strong></TableCell>
-                              <TableCell><strong>Source IP</strong></TableCell>
-                              <TableCell><strong>Outcome</strong></TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {auditLogs.map((log) => (
-                              <TableRow key={log._id} hover>
-                                <TableCell sx={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                                  {new Date(log.createdAt).toLocaleString()}
-                                </TableCell>
-                                <TableCell>
-                                  <Chip size="small" label={log.action} variant="outlined" sx={{ fontWeight: 600 }} />
-                                </TableCell>
-                                <TableCell sx={{ fontSize: '0.85rem' }}>
-                                  {log.actor?.username || log.actor?.email || 'System'}
-                                </TableCell>
-                                <TableCell sx={{ fontSize: '0.85rem' }}>
-                                  {log.resourceType} {log.resourceId ? `(${log.resourceId.slice(0, 8)}...)` : ''}
-                                </TableCell>
-                                <TableCell sx={{ fontSize: '0.85rem' }}>
-                                  {log.sourceIp || '—'}
-                                </TableCell>
-                                <TableCell>
-                                  <Chip
-                                    size="small"
-                                    label={log.outcome}
-                                    color={log.outcome === 'success' ? 'success' : 'error'}
-                                    sx={{ textTransform: 'capitalize', fontWeight: 600, height: 22 }}
-                                  />
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    )}
-                  </CardContent>
-                </Card>
+                      {ldapTestResult && (
+                        <Alert
+                          severity={ldapTestResult.success ? 'success' : 'error'}
+                          sx={{
+                            mt: 2,
+                            bgcolor: ldapTestResult.success ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                            color: ldapTestResult.success ? '#34d399' : '#f87171',
+                            border: ldapTestResult.success ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                          }}
+                        >
+                          {ldapTestResult.message}
+                        </Alert>
+                      )}
+                    </Grid>
+                  </Grid>
+                </Box>
               )}
-            </>
-          )}
+
+              {/* Tab 5: Automated Reports */}
+              {tabIndex === 5 && (
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                    Executive Awareness Reports Scheduler
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+                    Automatically dispatch PDF and HTML executive summaries of vulnerability metrics to CISO & stakeholders.
+                  </Typography>
+
+                  <Grid container spacing={3}>
+                    <Grid item xs={12}>
+                      <FormControlLabel
+                        control={<Switch checked={scheduledReports.enabled} onChange={(e) => setScheduledReports({ ...scheduledReports, enabled: e.target.checked })} color="primary" />}
+                        label={<Typography variant="body1" sx={{ color: '#f8fafc', fontWeight: 600 }}>Enable Scheduled Executive Reports</Typography>}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        label="Recipient Email Addresses (Comma separated)"
+                        placeholder="ciso@corp.internal, secops-leads@corp.internal"
+                        value={scheduledReports.recipients}
+                        onChange={(e) => setScheduledReports({ ...scheduledReports, recipients: e.target.value })}
+                        disabled={!scheduledReports.enabled}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth disabled={!scheduledReports.enabled}>
+                        <InputLabel sx={{ color: '#94a3b8' }}>Frequency</InputLabel>
+                        <Select
+                          value={scheduledReports.frequency}
+                          label="Frequency"
+                          onChange={(e) => setScheduledReports({ ...scheduledReports, frequency: e.target.value })}
+                          sx={{ bgcolor: '#0b0f19' }}
+                        >
+                          <MenuItem value="weekly_monday">Weekly on Monday Morning (08:00 AM)</MenuItem>
+                          <MenuItem value="weekly_friday">Weekly on Friday Afternoon</MenuItem>
+                          <MenuItem value="daily">Daily Briefing</MenuItem>
+                          <MenuItem value="monthly">Monthly Executive Summary</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth disabled={!scheduledReports.enabled}>
+                        <InputLabel sx={{ color: '#94a3b8' }}>Delivery SMTP Profile</InputLabel>
+                        <Select
+                          value={scheduledReports.senderProfile}
+                          label="Delivery SMTP Profile"
+                          onChange={(e) => setScheduledReports({ ...scheduledReports, senderProfile: e.target.value })}
+                          sx={{ bgcolor: '#0b0f19' }}
+                        >
+                          {senderProfiles.map((p) => (
+                            <MenuItem key={p._id} value={p._id}>
+                              {p.senderName} ({p.host})
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
+
+              {/* Tab 6: Audit Trail */}
+              {tabIndex === 6 && (
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1 }}>
+                    Security Audit Trail & Compliance Log
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+                    Chronological audit record of administrative actions, drills initiated, and user role modifications (retained for {general.logRetentionDays} days).
+                  </Typography>
+
+                  <TableContainer sx={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px' }}>
+                    <Table>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Timestamp</TableCell>
+                          <TableCell>Action</TableCell>
+                          <TableCell>Actor</TableCell>
+                          <TableCell>Resource</TableCell>
+                          <TableCell align="center">Outcome</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {auditLogs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} align="center" sx={{ py: 4, color: '#64748b' }}>
+                              No audit records recorded yet.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          auditLogs.map((log) => (
+                            <TableRow key={log._id} hover sx={{ '&:hover': { bgcolor: 'rgba(255,255,255,0.02)' } }}>
+                              <TableCell sx={{ color: '#94a3b8', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                                {new Date(log.createdAt).toLocaleString()}
+                              </TableCell>
+                              <TableCell sx={{ fontWeight: 600, color: '#f8fafc' }}>{log.action}</TableCell>
+                              <TableCell sx={{ color: '#60a5fa' }}>{log.actor?.username || log.actor?.email || 'System'}</TableCell>
+                              <TableCell sx={{ color: '#cbd5e1' }}>{log.resourceType} {log.resourceId ? `(${log.resourceId})` : ''}</TableCell>
+                              <TableCell align="center">
+                                <Chip size="small" label={log.outcome || 'Success'} sx={{ bgcolor: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontSize: '0.72rem' }} />
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
+
+            </CardContent>
+          </Card>
+
+          {/* Add Platform User Modal */}
+          <Dialog
+            open={userModalOpen}
+            onClose={() => !userCreating && setUserModalOpen(false)}
+            PaperProps={{
+              sx: {
+                bgcolor: '#111827',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '16px',
+                p: 1,
+                minWidth: { xs: '90%', sm: 520 },
+              },
+            }}
+          >
+            <form onSubmit={handleCreateUserSubmit}>
+              <DialogTitle sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                Provision Delegated Administrator / Engineer
+              </DialogTitle>
+              <DialogContent>
+                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="First Name"
+                      value={newUserData.firstName}
+                      onChange={(e) => setNewUserData({ ...newUserData, firstName: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Last Name"
+                      value={newUserData.lastName}
+                      onChange={(e) => setNewUserData({ ...newUserData, lastName: e.target.value })}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Username"
+                      value={newUserData.username}
+                      onChange={(e) => setNewUserData({ ...newUserData, username: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      type="email"
+                      label="Email Address"
+                      value={newUserData.email}
+                      onChange={(e) => setNewUserData({ ...newUserData, email: e.target.value })}
+                      required
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      type="password"
+                      label="Initial Password"
+                      value={newUserData.password}
+                      onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
+                      required
+                      helperText="Minimum 6 characters"
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth>
+                      <InputLabel sx={{ color: '#94a3b8' }}>Platform Role</InputLabel>
+                      <Select
+                        value={newUserData.role}
+                        label="Platform Role"
+                        onChange={(e) => setNewUserData({ ...newUserData, role: e.target.value })}
+                        sx={{ bgcolor: '#0b0f19' }}
+                      >
+                        <MenuItem value="campaign_manager">🛠️ Security Engineer (Drill Operator)</MenuItem>
+                        <MenuItem value="viewer">👁️ Auditor / Viewer (Read Only)</MenuItem>
+                        <MenuItem value="admin">👑 Administrator (Full Control)</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                </Grid>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, pb: 2 }}>
+                <Button onClick={() => setUserModalOpen(false)} disabled={userCreating} sx={{ color: '#94a3b8' }}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={userCreating}
+                  sx={{ bgcolor: '#3b82f6', color: '#fff', fontWeight: 700 }}
+                >
+                  {userCreating ? 'Creating...' : 'Provision User'}
+                </Button>
+              </DialogActions>
+            </form>
+          </Dialog>
+
         </Container>
         <Footer />
       </Box>

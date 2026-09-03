@@ -5,7 +5,7 @@ import Contact from '../models/Contact.js';
 import EmailClick from '../models/EmailClick.js';
 import CampaignTracking from '../models/CampaignTracking.js';
 
-const MAX_RANGE_MS = 183 * 24 * 60 * 60 * 1000;
+const MAX_RANGE_MS = 185 * 24 * 60 * 60 * 1000; // 180+ days retention window
 
 function dateRange(query) {
   const end = query.end ? new Date(query.end) : new Date();
@@ -81,7 +81,7 @@ export const getDashboardOverview = async (req, res) => {
 export const getRiskReport = async (req, res) => {
   try {
     const { start, end } = dateRange(req.query);
-    const groupBy = ['user', 'department', 'group'].includes(req.query.groupBy) ? req.query.groupBy : 'department';
+    const groupBy = ['user', 'department', 'group', 'ou'].includes(req.query.groupBy) ? req.query.groupBy : 'department';
 
     const trackingRecords = await CampaignTracking.find({
       createdAt: { $gte: start, $lte: end },
@@ -97,6 +97,8 @@ export const getRiskReport = async (req, res) => {
         keys = [contact?.department || 'Unassigned'];
       } else if (groupBy === 'group') {
         keys = contact?.directoryGroups?.length ? contact.directoryGroups : ['Default Group'];
+      } else if (groupBy === 'ou') {
+        keys = [contact?.ou || 'Default OU'];
       } else {
         keys = [contact?.email || record.email];
       }
@@ -128,6 +130,7 @@ export const getRiskReport = async (req, res) => {
     const data = [...buckets.values()]
       .map((row) => {
         const clickRate = row.simulationsSent > 0 ? ((row.clickCount / row.simulationsSent) * 100).toFixed(1) : '0.0';
+        const reportRate = row.simulationsSent > 0 ? ((row.reportCount / row.simulationsSent) * 100).toFixed(1) : '0.0';
         const rawRisk = Math.min(100, Math.round((parseFloat(clickRate) * 1.5) + (row.clickCount * 10) - (row.reportCount * 5)));
         const riskScore = Math.max(0, rawRisk);
         
@@ -139,6 +142,7 @@ export const getRiskReport = async (req, res) => {
         return {
           ...row,
           clickRate: parseFloat(clickRate),
+          reportRate: parseFloat(reportRate),
           riskScore,
           riskLevel,
         };
@@ -174,7 +178,6 @@ export const getTimelineData = async (req, res) => {
     ]);
 
     const dateMap = new Map();
-    // Fill all dates in range
     const current = new Date(start);
     while (current <= end) {
       const dateStr = current.toISOString().split('T')[0];
@@ -214,6 +217,169 @@ export const getTimelineData = async (req, res) => {
             tension: 0.3,
           },
         ],
+      },
+    });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// Campaign-wise Performance Analytics
+export const getCampaignAnalytics = async (req, res) => {
+  try {
+    const { start, end } = dateRange(req.query);
+    const campaigns = await Campaign.find({
+      createdAt: { $gte: start, $lte: end },
+    }).populate('template senderProfile').sort({ createdAt: -1 });
+
+    const results = await Promise.all(
+      campaigns.map(async (c) => {
+        const [sentCount, clickCount, reportCount] = await Promise.all([
+          CampaignTracking.countDocuments({ campaign: c._id }),
+          CampaignTracking.countDocuments({ campaign: c._id, $or: [{ status: 'clicked' }, { clickedCount: { $gt: 0 } }] }),
+          CampaignTracking.countDocuments({ campaign: c._id, $or: [{ status: 'reported' }, { reportedCount: { $gt: 0 } }] }),
+        ]);
+
+        const clickRate = sentCount > 0 ? parseFloat(((clickCount / sentCount) * 100).toFixed(1)) : 0;
+        const reportRate = sentCount > 0 ? parseFloat(((reportCount / sentCount) * 100).toFixed(1)) : 0;
+
+        return {
+          id: c._id,
+          name: c.name,
+          status: c.status,
+          templateName: c.template?.name || 'Custom Scenario',
+          senderHost: c.senderProfile?.host || 'Internal Relay',
+          sentCount,
+          clickCount,
+          reportCount,
+          clickRate,
+          reportRate,
+          createdAt: c.createdAt,
+        };
+      })
+    );
+
+    res.json({ success: true, data: results });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// Template-wise Vulnerability Analytics
+export const getTemplateAnalytics = async (req, res) => {
+  try {
+    const templates = await Template.find().sort({ createdAt: -1 });
+    const trackingList = await CampaignTracking.find().populate('campaign');
+
+    const templateStats = new Map();
+    for (const t of templates) {
+      templateStats.set(String(t._id), {
+        id: t._id,
+        name: t.name,
+        subject: t.subject,
+        difficulty: t.difficulty || 3,
+        category: t.category || 'General',
+        simulationsSent: 0,
+        clickCount: 0,
+        reportCount: 0,
+      });
+    }
+
+    for (const record of trackingList) {
+      const templateId = String(record.campaign?.template);
+      if (templateStats.has(templateId)) {
+        const item = templateStats.get(templateId);
+        item.simulationsSent += 1;
+        if (record.status === 'clicked' || record.clickedCount > 0) item.clickCount += 1;
+        if (record.status === 'reported' || record.reportedCount > 0) item.reportCount += 1;
+      }
+    }
+
+    const results = [...templateStats.values()]
+      .map((item) => {
+        const clickRate = item.simulationsSent > 0 ? parseFloat(((item.clickCount / item.simulationsSent) * 100).toFixed(1)) : 0;
+        const reportRate = item.simulationsSent > 0 ? parseFloat(((item.reportCount / item.simulationsSent) * 100).toFixed(1)) : 0;
+        return {
+          ...item,
+          clickRate,
+          reportRate,
+        };
+      })
+      .sort((a, b) => b.clickRate - a.clickRate);
+
+    res.json({ success: true, data: results });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// User-wise Target Analytics (Repeat Clickers vs Champions)
+export const getUserAnalytics = async (req, res) => {
+  try {
+    const { start, end } = dateRange(req.query);
+    const trackingRecords = await CampaignTracking.find({
+      createdAt: { $gte: start, $lte: end },
+    }).populate('contact');
+
+    const userMap = new Map();
+
+    for (const record of trackingRecords) {
+      const email = record.contact?.email || record.email;
+      if (!email) continue;
+
+      const item = userMap.get(email) || {
+        email,
+        name: record.contact ? `${record.contact.firstName} ${record.contact.lastName || ''}`.trim() : email.split('@')[0],
+        department: record.contact?.department || 'General',
+        ou: record.contact?.ou || '',
+        team: record.contact?.teamName || '',
+        simulationsReceived: 0,
+        clickCount: 0,
+        reportCount: 0,
+        lastEventDate: record.createdAt,
+        lastClickedIp: record.clickedIp || 'N/A',
+        ipAddresses: [],
+      };
+
+      item.simulationsReceived += 1;
+      if (record.status === 'clicked' || record.clickedCount > 0) {
+        item.clickCount += record.clickedCount || 1;
+        if (record.clickedIp) {
+          item.lastClickedIp = record.clickedIp;
+          if (!item.ipAddresses.includes(record.clickedIp)) {
+            item.ipAddresses.push(record.clickedIp);
+          }
+        }
+      }
+      if (record.status === 'reported' || record.reportedCount > 0) item.reportCount += record.reportedCount || 1;
+      if (new Date(record.createdAt) > new Date(item.lastEventDate)) item.lastEventDate = record.createdAt;
+
+      userMap.set(email, item);
+    }
+
+    const users = [...userMap.values()].map((u) => {
+      let riskTier = 'Low';
+      if (u.clickCount >= 3) riskTier = 'Chronic Clicker';
+      else if (u.clickCount >= 1) riskTier = 'Vulnerable';
+      else if (u.reportCount >= 1) riskTier = 'Security Champion';
+
+      return {
+        ...u,
+        riskTier,
+        ipAddress: u.lastClickedIp,
+      };
+    });
+
+    const repeatClickers = users.filter((u) => u.clickCount >= 1).sort((a, b) => b.clickCount - a.clickCount);
+    const champions = users.filter((u) => u.reportCount >= 1 && u.clickCount === 0).sort((a, b) => b.reportCount - a.reportCount);
+
+    res.json({
+      success: true,
+      data: {
+        allUsers: users,
+        repeatClickers,
+        champions,
+        totalTracked: users.length,
       },
     });
   } catch (error) {

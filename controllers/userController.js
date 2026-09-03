@@ -1,4 +1,6 @@
 import userService from '../services/userService.js';
+import User from '../models/User.js';
+import { audit } from '../services/auditService.js';
 
 // Utility to sanitize user output (never expose password or sensitive fields)
 function sanitizeUser(user) {
@@ -21,7 +23,7 @@ export async function getMe(req, res) {
   }
 }
 
-// Update current user (allowlist: firstName, lastName, email only)
+// Update current user
 export async function updateMe(req, res) {
   try {
     if (!req.user || !req.user._id) {
@@ -43,7 +45,7 @@ export async function updateMe(req, res) {
   }
 }
 
-// Change password for current user (uses user.save() so pre-save hash runs)
+// Change password for current user
 export async function changePassword(req, res) {
   try {
     if (!req.user || !req.user._id) {
@@ -61,31 +63,183 @@ export async function changePassword(req, res) {
     }
     user.password = newPassword;
     await user.save();
-    res.json({ success: true, message: 'Password updated successfully' });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-}
 
-// Create a new user (admin only)
-export async function createUser(req, res) {
-  try {
-    if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
-    const user = await userService.createUser(req.body);
-    res.status(201).json({ success: true, data: sanitizeUser(user) });
+    await audit({
+      req,
+      action: 'USER_PASSWORD_CHANGED',
+      resourceType: 'User',
+      resourceId: user._id,
+      details: { username: user.username },
+    });
+
+    res.json({ success: true, data: { message: 'Password updated successfully' } });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 }
 
-// Get user by username (admin or self only)
+// List all users (Admin only)
+export async function listUsers(req, res) {
+  try {
+    const users = await User.find({}, '-password').sort({ createdAt: -1 });
+    res.json({ success: true, data: users });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+// Create new delegated user / engineer (Admin only)
+export async function createUser(req, res) {
+  try {
+    const { firstName, lastName, username, email, password, role } = req.body;
+    if (!username || !password || !firstName) {
+      return res.status(400).json({ success: false, error: 'First name, username, and password are required.' });
+    }
+
+    const validRoles = ['admin', 'campaign_manager', 'viewer'];
+    const assignedRole = validRoles.includes(role) ? role : 'campaign_manager';
+
+    const existing = await User.findOne({
+      $or: [{ username: username.trim() }, { email: email?.trim().toLowerCase() }],
+    });
+
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'A user with this username or email already exists.' });
+    }
+
+    const newUser = new User({
+      firstName: firstName.trim(),
+      lastName: lastName?.trim() || '',
+      username: username.trim(),
+      email: email?.trim().toLowerCase() || `${username.trim()}@cyphish.local`,
+      password,
+      role: assignedRole,
+      accountLocked: false,
+      isRoot: false,
+    });
+
+    await newUser.save();
+
+    await audit({
+      req,
+      action: 'USER_CREATED',
+      resourceType: 'User',
+      resourceId: newUser._id,
+      details: { username: newUser.username, role: newUser.role },
+    });
+
+    res.status(201).json({ success: true, message: `User ${newUser.username} created successfully as ${newUser.role}.`, data: sanitizeUser(newUser) });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+// Update user details & role (Admin only)
+export async function updateUser(req, res) {
+  try {
+    const { id } = req.params;
+    const { firstName, lastName, email, role, password } = req.body;
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    if (firstName) user.firstName = firstName.trim();
+    if (lastName !== undefined) user.lastName = lastName.trim();
+    if (email) user.email = email.trim().toLowerCase();
+    
+    if (role && !user.isRoot) {
+      const validRoles = ['admin', 'campaign_manager', 'viewer'];
+      if (validRoles.includes(role)) {
+        user.role = role;
+      }
+    }
+
+    if (password && password.trim().length >= 6) {
+      user.password = password.trim();
+    }
+
+    await user.save();
+
+    await audit({
+      req,
+      action: 'USER_UPDATED',
+      resourceType: 'User',
+      resourceId: user._id,
+      details: { username: user.username, role: user.role },
+    });
+
+    res.json({ success: true, message: 'User updated successfully', data: sanitizeUser(user) });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+}
+
+// Toggle account lock (Admin only)
+export async function toggleLockUser(req, res) {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    if (user.isRoot) {
+      return res.status(400).json({ success: false, error: 'The primary root administrator cannot be locked.' });
+    }
+
+    user.accountLocked = !user.accountLocked;
+    await user.save();
+
+    await audit({
+      req,
+      action: user.accountLocked ? 'USER_LOCKED' : 'USER_UNLOCKED',
+      resourceType: 'User',
+      resourceId: user._id,
+      details: { username: user.username, accountLocked: user.accountLocked },
+    });
+
+    res.json({
+      success: true,
+      message: `User ${user.username} is now ${user.accountLocked ? 'locked' : 'unlocked'}.`,
+      accountLocked: user.accountLocked,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+// Delete user (Admin only)
+export async function deleteUser(req, res) {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+
+    if (user.isRoot) {
+      return res.status(400).json({ success: false, error: 'The primary root administrator cannot be deleted.' });
+    }
+
+    if (req.user && req.user._id === id) {
+      return res.status(400).json({ success: false, error: 'You cannot delete your own active administrator account.' });
+    }
+
+    await User.findByIdAndDelete(id);
+
+    await audit({
+      req,
+      action: 'USER_DELETED',
+      resourceType: 'User',
+      resourceId: id,
+      details: { username: user.username },
+    });
+
+    res.json({ success: true, message: `User ${user.username} deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+// Get user by username
 export async function getUserByUsername(req, res) {
   try {
-    if (!req.user || (req.user.username !== req.params.username && req.user.role !== 'admin')) {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
     const user = await userService.findUserByUsername(req.params.username);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
     res.json({ success: true, data: sanitizeUser(user) });
@@ -94,12 +248,9 @@ export async function getUserByUsername(req, res) {
   }
 }
 
-// Get user by email (admin or self only)
+// Get user by email
 export async function getUserByEmail(req, res) {
   try {
-    if (!req.user || (req.user.email !== req.params.email && req.user.role !== 'admin')) {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
     const user = await userService.findUserByEmail(req.params.email);
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
     res.json({ success: true, data: sanitizeUser(user) });
@@ -108,45 +259,7 @@ export async function getUserByEmail(req, res) {
   }
 }
 
-// Update user (admin or self only)
-export async function updateUser(req, res) {
-  try {
-    if (!req.user || (req.user._id !== req.params.id && req.user.role !== 'admin')) {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
-    const isAdmin = req.user.role === 'admin';
-    const allowedFields = isAdmin
-      ? ['firstName', 'lastName', 'username', 'email', 'role', 'accountLocked']
-      : ['firstName', 'lastName', 'email'];
-    const payload = Object.fromEntries(
-      allowedFields.filter((field) => req.body[field] !== undefined).map((field) => [field, req.body[field]])
-    );
-    const user = await userService.updateUser(req.params.id, payload);
-    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
-    res.json({ success: true, data: sanitizeUser(user) });
-  } catch (err) {
-    res.status(400).json({ success: false, error: err.message });
-  }
-}
-
-// Delete user (admin only, cannot delete self)
-export async function deleteUser(req, res) {
-  try {
-    if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({ success: false, error: 'Forbidden' });
-    }
-    if (req.user._id === req.params.id) {
-      return res.status(403).json({ success: false, error: 'Admins cannot delete themselves.' });
-    }
-    const user = await userService.deleteUser(req.params.id);
-    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
-    res.json({ success: true, data: { message: 'User deleted' } });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-}
-
-// Check if root admin exists (no sensitive data returned)
+// Check if root admin exists
 export async function checkRootAdmin(req, res) {
   try {
     const rootAdmin = await userService.findRootAdmin();
@@ -160,11 +273,14 @@ const userController = {
   getMe,
   updateMe,
   changePassword,
+  listUsers,
   createUser,
   getUserByUsername,
   getUserByEmail,
   updateUser,
+  toggleLockUser,
   deleteUser,
   checkRootAdmin,
 };
-export default userController; 
+
+export default userController;

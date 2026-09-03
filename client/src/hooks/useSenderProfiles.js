@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { axiosInstance } from '../services/axiosInstance';
 
 export const useSenderProfiles = () => {
@@ -6,79 +6,95 @@ export const useSenderProfiles = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    useEffect(() => {
-        fetchSenderProfiles(); // Fetch sender profiles on component mount
+    const fetchSenderProfiles = useCallback(async () => {
+        setLoading(true);
+        try {
+            const response = await axiosInstance.get('/api/sender-profile');
+            if (response.data.success) {
+                setSenderProfiles(response.data.data);
+            } else {
+                setError(response.data.message);
+            }
+        } catch (err) {
+            setError(err.response?.data?.message || err.message);
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
-    // Function to fetch all sender profile data
-    const fetchSenderProfiles = async () => {
-        setLoading(true);
-        try {
-            const response = await axiosInstance.get('/api/sender-profile'); // Make API call
-            if (response.data.success) {
-                setSenderProfiles(response.data.data); // Set sender profiles from API response
-            } else {
-                setError(response.data.message);
-            }
-        } catch (error) {
-            setError(error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
+    useEffect(() => {
+        fetchSenderProfiles();
+    }, [fetchSenderProfiles]);
 
-    // Function to create a new sender profile
     const createSenderProfile = async (formData) => {
         setLoading(true);
-        setError(null); // Reset error before making the API call
+        setError(null);
         try {
-            const response = await axiosInstance.post('/api/sender-profile', formData, {
-                headers: {
-                    'Content-Type': 'application/json' // Set the appropriate header
-                }
-            });
-
+            const response = await axiosInstance.post('/api/sender-profile', formData);
             if (response.data.success) {
-                // Add the newly created sender profile to the state
-                setSenderProfiles((prevSenderProfiles) => [...prevSenderProfiles, response.data.data]);
-                return { success: true, data: response.data.data }; // Return the response for further use
+                setSenderProfiles((prev) => [response.data.data, ...prev]);
+                return { success: true, data: response.data.data };
             }
-
-            // Handle unsuccessful response with message
-            const errorMessage = response.data.message || "Unable to complete request";
-            setError(`An Error Occurred: ${errorMessage}`);
+            const errorMessage = response.data.message || 'Unable to create profile';
+            setError(errorMessage);
             return { success: false, message: errorMessage };
-
-        } catch (error) {
-            // Handle network or server errors
-            const errorMessage = error.response?.data?.message || "A server error occurred.";
-            setError(`An Error Occurred: ${errorMessage}`);
+        } catch (err) {
+            const errorMessage = err.response?.data?.message || 'Server error creating profile';
+            setError(errorMessage);
             return { success: false, message: errorMessage };
         } finally {
             setLoading(false);
         }
     };
 
-    // Function to delete a sender profile by ID
+    const updateSenderProfile = async (id, formData) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await axiosInstance.put(`/api/sender-profile/${id}`, formData);
+            if (response.data.success) {
+                setSenderProfiles((prev) => prev.map((p) => (p._id === id ? response.data.data : p)));
+                return { success: true, data: response.data.data };
+            }
+            const errorMessage = response.data.message || 'Unable to update profile';
+            return { success: false, message: errorMessage };
+        } catch (err) {
+            const errorMessage = err.response?.data?.message || 'Server error updating profile';
+            return { success: false, message: errorMessage };
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const testConnection = async (payload) => {
+        try {
+            const response = await axiosInstance.post('/api/sender-profile/test-connection', payload);
+            return { success: true, message: response.data.message || 'Connection successful' };
+        } catch (err) {
+            return {
+                success: false,
+                message: err.response?.data?.message || err.message || 'Connection failed',
+                code: err.response?.data?.code,
+            };
+        }
+    };
+
     const handleDelete = async (id) => {
         setLoading(true);
-        setError(null); // Reset the error before making the call
+        setError(null);
         try {
-            const response = await axiosInstance.delete(`/api/sender-profile/${id}`); // API call to delete profile by ID
+            const response = await axiosInstance.delete(`/api/sender-profile/${id}`);
             if (response.data.success) {
-                // Remove deleted sender profile from state
-                setSenderProfiles((prevSenderProfiles) => prevSenderProfiles.filter(profile => profile._id !== id));
-                console.log('API call succeeded, profile deleted from database');
-                return { success: true, message: 'Sender profile deleted successfully' }; // Return success response
+                setSenderProfiles((prev) => prev.filter((profile) => profile._id !== id));
+                return { success: true, message: 'Sender profile deleted successfully' };
             } else {
                 setError(response.data.message);
-                console.log('API call failed:', response.data.message);
-                return { success: false, message: response.data.message }; // Return error message
+                return { success: false, message: response.data.message };
             }
-        } catch (error) {
-            setError(error.message);
-            console.log('API call error:', error.message);
-            return { success: false, message: error.message }; // Handle error and return failure response
+        } catch (err) {
+            const msg = err.response?.data?.message || err.message;
+            setError(msg);
+            return { success: false, message: msg };
         } finally {
             setLoading(false);
         }
@@ -90,6 +106,8 @@ export const useSenderProfiles = () => {
         error,
         fetchSenderProfiles,
         createSenderProfile,
-        handleDelete
+        updateSenderProfile,
+        testConnection,
+        handleDelete,
     };
 };

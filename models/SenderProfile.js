@@ -22,12 +22,34 @@ const senderProfileSchema = new Schema({
     },
     password: {
         type: String,
-        trim: true
+        trim: true,
     },
     secure: {
         type: Boolean,
-        required: true, // true for SSL (port 465), false for TLS or other ports
         default: false
+    },
+    encryptionMode: {
+        type: String,
+        enum: ['starttls_strict', 'smtps_direct', 'starttls_opportunistic', 'none'],
+        default: 'starttls_strict',
+    },
+    minTlsVersion: {
+        type: String,
+        enum: ['TLSv1.3', 'TLSv1.2'],
+        default: 'TLSv1.3',
+    },
+    customCaCertificate: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    ignoreTlsCertificateErrors: {
+        type: Boolean,
+        default: false,
+    },
+    isDefault: {
+        type: Boolean,
+        default: false,
     },
 }, { timestamps: true });
 

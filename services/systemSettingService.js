@@ -10,7 +10,6 @@ export async function getSystemSettings() {
 
   let settings = await SystemSetting.findOne({ key: 'global' }).populate('scheduledReports.senderProfile');
   if (!settings) {
-    // Initialize from environment variables on first start
     const defaultRecipients = (process.env.REPORT_RECIPIENTS || '')
       .split(',')
       .map((r) => r.trim())
@@ -23,6 +22,28 @@ export async function getSystemSettings() {
         organizationName: 'CyPhish Security Awareness',
         trustProxy: process.env.TRUST_PROXY === 'true',
         siemLeefStdout: process.env.SIEM_LEEF_STDOUT === 'true',
+        logRetentionDays: 180,
+      },
+      landingPage: {
+        warningTitle: 'Oops! You clicked a simulated phishing link.',
+        warningMessage: "Don't panic! This was an authorized internal security awareness drill conducted by your organization. No real credentials or sensitive data were collected.",
+        nextStepsMessage: 'Your security team has logged this drill for awareness tracking. Next time you see a suspicious email, always use the Report Phishing link or forward it to your SOC / IT Security desk!',
+        reportSuccessTitle: '🎉 Outstanding Job! You Reported a Phishing Simulation.',
+        reportSuccessMessage: 'You correctly identified an authorized security drill and reported it. Your proactive vigilance protects our entire organization from real-world cyber attacks!',
+        redFlags: [
+          { title: '1. Mismatched Sender Domain', description: 'Always verify the sender email address instead of just looking at the display name.' },
+          { title: '2. Artificial Urgency & Coercion', description: 'Attackers pressure you with tight deadlines like "Your account will be suspended within 2 hours" to bypass rational thought.' },
+          { title: '3. Suspicious Hyperlink Destination', description: 'Hover over links before clicking to preview the real destination URL in your email client status bar.' },
+          { title: '4. Unexpected Password / Action Request', description: 'Legitimate IT teams never ask you to verify your passwords or sensitive data via unsolicited links.' },
+        ],
+      },
+      siem: {
+        enabled: false,
+        host: '',
+        port: 514,
+        protocol: 'UDP',
+        format: 'LEEF_2.0',
+        facility: 'local0',
       },
       ldap: {
         enabled: process.env.LDAP_ENABLED === 'true',
@@ -61,17 +82,38 @@ export async function updateSystemSettings(updateData, req = null) {
     if (updateData.general.publicUrl !== undefined) settings.general.publicUrl = updateData.general.publicUrl;
     if (updateData.general.organizationName !== undefined) settings.general.organizationName = updateData.general.organizationName;
     if (updateData.general.trustProxy !== undefined) settings.general.trustProxy = updateData.general.trustProxy;
+    if (updateData.general.logRetentionDays !== undefined) settings.general.logRetentionDays = Number(updateData.general.logRetentionDays) || 180;
     if (updateData.general.siemLeefStdout !== undefined) {
       settings.general.siemLeefStdout = updateData.general.siemLeefStdout;
       process.env.SIEM_LEEF_STDOUT = String(updateData.general.siemLeefStdout);
     }
   }
 
+  if (updateData.landingPage) {
+    if (!settings.landingPage) settings.landingPage = {};
+    if (updateData.landingPage.warningTitle !== undefined) settings.landingPage.warningTitle = updateData.landingPage.warningTitle;
+    if (updateData.landingPage.warningMessage !== undefined) settings.landingPage.warningMessage = updateData.landingPage.warningMessage;
+    if (updateData.landingPage.nextStepsMessage !== undefined) settings.landingPage.nextStepsMessage = updateData.landingPage.nextStepsMessage;
+    if (updateData.landingPage.reportSuccessTitle !== undefined) settings.landingPage.reportSuccessTitle = updateData.landingPage.reportSuccessTitle;
+    if (updateData.landingPage.reportSuccessMessage !== undefined) settings.landingPage.reportSuccessMessage = updateData.landingPage.reportSuccessMessage;
+    if (updateData.landingPage.redFlags !== undefined && Array.isArray(updateData.landingPage.redFlags)) {
+      settings.landingPage.redFlags = updateData.landingPage.redFlags;
+    }
+  }
+
+  if (updateData.siem) {
+    if (updateData.siem.enabled !== undefined) settings.siem.enabled = updateData.siem.enabled;
+    if (updateData.siem.host !== undefined) settings.siem.host = updateData.siem.host.trim();
+    if (updateData.siem.port !== undefined) settings.siem.port = Number(updateData.siem.port) || 514;
+    if (updateData.siem.protocol !== undefined) settings.siem.protocol = updateData.siem.protocol;
+    if (updateData.siem.format !== undefined) settings.siem.format = updateData.siem.format;
+    if (updateData.siem.facility !== undefined) settings.siem.facility = updateData.siem.facility;
+  }
+
   if (updateData.ldap) {
     if (updateData.ldap.enabled !== undefined) settings.ldap.enabled = updateData.ldap.enabled;
     if (updateData.ldap.url !== undefined) settings.ldap.url = updateData.ldap.url;
     if (updateData.ldap.bindDN !== undefined) settings.ldap.bindDN = updateData.ldap.bindDN;
-    // Only update bindPassword if a new one is provided
     if (updateData.ldap.bindPassword && updateData.ldap.bindPassword !== '[UNCHANGED]') {
       settings.ldap.bindPassword = updateData.ldap.bindPassword;
     }
@@ -98,31 +140,35 @@ export async function updateSystemSettings(updateData, req = null) {
   await settings.save();
   clearSettingsCache();
 
-  if (req) {
-    await audit({
-      req,
-      action: 'system.settings_updated',
-      resourceType: 'system_setting',
-      resourceId: 'global',
-      details: {
-        ldapEnabled: settings.ldap.enabled,
-        reportsEnabled: settings.scheduledReports.enabled,
-        publicUrl: settings.general.publicUrl,
-      },
-    });
+  try {
+    const { reloadReportScheduler } = await import('./reportScheduler.js');
+    await reloadReportScheduler();
+  } catch (err) {
+    console.warn('Report scheduler reload warning:', err.message);
   }
 
-  return getMaskedSettings(settings);
+  await audit({
+    req,
+    action: 'SYSTEM_SETTINGS_UPDATED',
+    resourceType: 'SystemSetting',
+    resourceId: 'global',
+    details: {
+      publicUrl: settings.general.publicUrl,
+      ldapEnabled: settings.ldap.enabled,
+      reportingEnabled: settings.scheduledReports.enabled,
+      siemEnabled: settings.siem.enabled,
+      logRetentionDays: settings.general.logRetentionDays,
+    },
+  });
+
+  return getMaskedSystemSettings(settings);
 }
 
-export function getMaskedSettings(settingsDoc) {
-  const obj = settingsDoc.toObject ? settingsDoc.toObject() : JSON.parse(JSON.stringify(settingsDoc));
-  
-  // Mask sensitive passwords
+export function getMaskedSystemSettings(settings) {
+  const obj = settings.toObject ? settings.toObject() : { ...settings };
   if (obj.ldap) {
     obj.ldap.hasPassword = Boolean(obj.ldap.bindPassword);
     delete obj.ldap.bindPassword;
   }
-
   return obj;
 }

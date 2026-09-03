@@ -28,43 +28,49 @@ import Account from './pages/Account';
 
 import NotFoundPage from './pages/NotFound';
 
-const THEME = createTheme({
+// Cyber Command & SOC Ops Theme (Full Dark Mode)
+const CYBER_COMMAND_THEME = createTheme({
   palette: {
+    mode: 'dark',
     primary: {
-      main: '#1d4ed8', // Enterprise Blue / Indigo
-      light: '#3b82f6',
-      dark: '#1e40af',
+      main: '#3b82f6', // Electric Cobalt
+      light: '#60a5fa',
+      dark: '#1d4ed8',
       contrastText: '#ffffff',
     },
     secondary: {
-      main: '#0284c7', // Sky / Cyan
-      light: '#38bdf8',
-      dark: '#0369a1',
+      main: '#06b6d4', // Cyber Cyan
+      light: '#22d3ee',
+      dark: '#0891b2',
       contrastText: '#ffffff',
     },
     success: {
-      main: '#059669', // Emerald
-      light: '#10b981',
-      dark: '#047857',
+      main: '#10b981', // Cyber Emerald
+      light: '#34d399',
+      dark: '#059669',
+      contrastText: '#ffffff',
     },
     error: {
-      main: '#dc2626', // Red
-      light: '#ef4444',
-      dark: '#b91c1c',
+      main: '#ef4444', // Threat Red
+      light: '#f87171',
+      dark: '#dc2626',
+      contrastText: '#ffffff',
     },
     warning: {
-      main: '#d97706', // Amber
-      light: '#f59e0b',
-      dark: '#b45309',
+      main: '#f59e0b', // Telemetry Amber
+      light: '#fbbf24',
+      dark: '#d97706',
+      contrastText: '#000000',
     },
     background: {
-      default: '#f8fafc',
-      paper: '#ffffff',
+      default: '#0b0f19', // Deep Midnight Command Slate
+      paper: '#111827',   // Dark Surface Slate
     },
     text: {
-      primary: '#0f172a',
-      secondary: '#64748b',
+      primary: '#f8fafc',
+      secondary: '#94a3b8',
     },
+    divider: 'rgba(255, 255, 255, 0.08)',
   },
   typography: {
     fontFamily: '"Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -88,8 +94,9 @@ const THEME = createTheme({
         root: {
           borderRadius: '10px',
           boxShadow: 'none',
+          fontWeight: 600,
           '&:hover': {
-            boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+            boxShadow: '0 4px 16px rgba(59, 130, 246, 0.25)',
           },
         },
       },
@@ -98,6 +105,8 @@ const THEME = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
+          backgroundColor: '#111827',
+          border: '1px solid rgba(255, 255, 255, 0.07)',
         },
       },
     },
@@ -105,8 +114,47 @@ const THEME = createTheme({
       styleOverrides: {
         root: {
           borderRadius: '16px',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 4px 20px -2px rgba(15, 23, 42, 0.05)',
+          backgroundColor: '#111827',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+          color: '#e2e8f0',
+        },
+        head: {
+          fontWeight: 700,
+          color: '#94a3b8',
+          backgroundColor: '#0f172a',
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#0b0f19',
+          borderRadius: '10px',
+          '& .MuiOutlinedInput-notchedOutline': {
+            borderColor: 'rgba(255, 255, 255, 0.12)',
+          },
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#3b82f6',
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderColor: '#3b82f6',
+            boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.2)',
+          },
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          fontWeight: 600,
         },
       },
     },
@@ -115,12 +163,13 @@ const THEME = createTheme({
 
 function App() {
   return (
-    <ThemeProvider theme={THEME}>
+    <ThemeProvider theme={CYBER_COMMAND_THEME}>
       <Router>
         <Routes>
           <Route path="/" element={<Navigate to="/console" replace />} />
           <Route path="/console" element={<ConsoleEntry />} />
           <Route path="/training/warning" element={<TrainingWarning />} />
+          <Route path="/training/report" element={<TrainingWarning />} />
           <Route path="/account/signin" element={<Navigate to="/training/warning" replace />} />
           
           <Route path="/console/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

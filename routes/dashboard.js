@@ -2,22 +2,25 @@ import express from 'express';
 import {
     getDashboardOverview,
     getTimelineData,
-    getRiskReport
+    getRiskReport,
+    getCampaignAnalytics,
+    getTemplateAnalytics,
+    getUserAnalytics,
 } from '../controllers/dashboardController.js';
 import authMiddleware from '../middlewares/authMiddleware.js';
-import requireAdmin from '../middlewares/requireAdmin.js';
+import { requireRoles } from '../middlewares/requireAdmin.js';
 
 const router = express.Router();
 
-// Protect routes with authMiddleware
 router.use(authMiddleware);
-router.use(requireAdmin);
+router.use(requireRoles(['admin', 'campaign_manager', 'viewer']));
 
-// Dashboard Overview
+// Analytics & Overview
 router.get('/overview', getDashboardOverview);
-
-// Timeline Data
 router.get('/timeline', getTimelineData);
 router.get('/risk', getRiskReport);
+router.get('/analytics/campaigns', getCampaignAnalytics);
+router.get('/analytics/templates', getTemplateAnalytics);
+router.get('/analytics/users', getUserAnalytics);
 
 export default router;
