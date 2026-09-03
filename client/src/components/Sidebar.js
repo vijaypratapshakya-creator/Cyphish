@@ -258,6 +258,12 @@ const Sidebar = () => {
                 Change Password
               </MenuItem>
               <Divider sx={{ my: 1 }} />
+              <Box sx={{ px: 2, py: 0.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  Version: {version} {releaseDate ? `(${releaseDate})` : ''}
+                </Typography>
+              </Box>
+              <Divider sx={{ my: 0.5 }} />
               <MenuItem onClick={handleLogout} sx={{ color: '#dc2626', fontWeight: 600 }}>
                 Sign Out
               </MenuItem>

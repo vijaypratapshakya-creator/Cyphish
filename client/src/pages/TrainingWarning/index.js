@@ -13,11 +13,8 @@ import {
   Divider,
 } from '@mui/material';
 import {
-  ShieldAlert as ShieldAlertIcon,
   WarningAmber as WarningIcon,
   CheckCircleOutline as CheckIcon,
-  MarkEmailRead as EmailIcon,
-  HelpOutline as HelpIcon,
 } from '@mui/icons-material';
 import logo from '../../assets/img/cyphish-logo.png';
 import { logClick } from '../../services/MSPortalService';

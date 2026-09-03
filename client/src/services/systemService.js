@@ -29,3 +29,8 @@ export async function searchDirectoryUsers(params) {
   const response = await axiosInstance.get('/api/directory/users', { params });
   return response.data;
 }
+
+export async function getSenderProfiles() {
+  const response = await axiosInstance.get('/api/sender-profile');
+  return response.data;
+}

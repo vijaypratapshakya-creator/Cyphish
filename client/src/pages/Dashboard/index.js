@@ -17,7 +17,6 @@ import {
   TableHead,
   TableRow,
   LinearProgress,
-  Divider,
 } from '@mui/material';
 import {
   Campaign as CampaignIcon,
@@ -29,7 +28,6 @@ import {
   TrendingDown as TrendingDownIcon,
   Shield as ShieldIcon,
   CheckCircle as CheckCircleIcon,
-  Warning as WarningIcon,
   Send as SendIcon,
   Assessment as AssessmentIcon,
 } from '@mui/icons-material';
@@ -65,7 +63,7 @@ ChartJS.register(
 const Dashboard = () => {
   const navigate = useNavigate();
   const [selectedRangeDays, setSelectedRangeDays] = useState(30);
-  const { dashboardData, timelineData, riskData, systemStats, loading } = useDashboard(selectedRangeDays);
+  const { dashboardData, timelineData, riskData, systemStats } = useDashboard(selectedRangeDays);
 
   const getScoreColor = (score) => {
     if (score >= 80) return '#059669'; // Emerald

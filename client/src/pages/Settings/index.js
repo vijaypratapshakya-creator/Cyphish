@@ -21,8 +21,6 @@ import {
   InputLabel,
   Divider,
   Chip,
-  IconButton,
-  Tooltip,
   Table,
   TableBody,
   TableCell,
@@ -37,7 +35,6 @@ import {
   SmartToy as AIIcon,
   History as AuditIcon,
   CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
   Send as SendIcon,
   Search as SearchIcon,
   Save as SaveIcon,
@@ -53,8 +50,8 @@ import {
   testLdapConnection,
   searchDirectoryUsers,
   getSystemStats,
+  getSenderProfiles,
 } from '../../services/systemService';
-import { getAllSenderProfiles } from '../../services/userService';
 import IntegrationsTab from '../Account/IntegrationsTab';
 
 const Settings = () => {
@@ -112,7 +109,7 @@ const Settings = () => {
     try {
       const [settingsRes, profilesRes, statsRes] = await Promise.all([
         getSystemSettings(),
-        getAllSenderProfiles().catch(() => ({ success: false, data: [] })),
+        getSenderProfiles().catch(() => ({ success: false, data: [] })),
         getSystemStats().catch(() => ({ success: false, data: {} })),
       ]);
 
