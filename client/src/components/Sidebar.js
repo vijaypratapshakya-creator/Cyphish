@@ -199,9 +199,9 @@ const Sidebar = () => {
               src={cyphishLogo} 
               alt="CyPhish" 
               sx={{ 
-                height: 28,
+                height: 32,
                 cursor: 'pointer',
-                filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.3))',
+                filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.25))',
               }}
               onClick={() => navigate('/console/dashboard')}
             />

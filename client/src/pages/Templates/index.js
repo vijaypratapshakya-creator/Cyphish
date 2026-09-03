@@ -61,7 +61,7 @@ const Templates = () => {
 
   useEffect(() => {
     fetchTemplateList();
-  }, [fetchTemplateList]);
+  }, []);
 
   const handleCreateMenuOpen = (event) => setCreateMenuAnchor(event.currentTarget);
   const handleCreateMenuClose = () => setCreateMenuAnchor(null);

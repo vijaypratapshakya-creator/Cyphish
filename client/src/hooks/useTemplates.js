@@ -11,7 +11,7 @@ export const useTemplates = () => {
     const [paginationState, setPaginationState] = useState({
         current_page: 1,
         last_page: 1,
-        per_page: 15,
+        per_page: 50,
         total: 0,
         from: null,
         to: null,
@@ -23,7 +23,7 @@ export const useTemplates = () => {
         try {
             const response = await axiosInstance.get('/api/template');
             if (response.data.success) {
-                setTemplates(response.data.data);
+                setTemplates(response.data.data || []);
             } else {
                 const errorMessage = response.data.message || 'Unable to complete request';
                 setError(errorMessage);
@@ -43,9 +43,10 @@ export const useTemplates = () => {
         setError(null);
         try {
             const params = new URLSearchParams();
-            const page = overrides.page ?? paginationState.current_page;
-            const perPage = overrides.per_page ?? paginationState.per_page;
-            const search = overrides.search !== undefined ? overrides.search : listFilters.search;
+            const page = overrides.page !== undefined ? overrides.page : 1;
+            const perPage = overrides.per_page !== undefined ? overrides.per_page : 50;
+            const search = overrides.search !== undefined ? overrides.search : '';
+
             params.set('page', String(page));
             params.set('per_page', String(perPage));
             if (search && search.trim()) params.set('search', search.trim());
@@ -54,8 +55,8 @@ export const useTemplates = () => {
             if (response.data.success) {
                 const { data } = response.data;
                 setTemplates(data.templates || []);
-                setPaginationState(data.pagination || paginationState);
-                if (data.filters) setListFilters((prev) => ({ ...prev, ...data.filters }));
+                if (data.pagination) setPaginationState(data.pagination);
+                if (data.filters) setListFilters(data.filters);
                 return { success: true, data: data };
             } else {
                 const errorMessage = response.data.message || 'Unable to complete request';
@@ -69,7 +70,7 @@ export const useTemplates = () => {
         } finally {
             setListLoading(false);
         }
-    }, [paginationState, listFilters.search]);
+    }, []);
 
     const createTemplate = useCallback(async (formDataOrPayload) => {
         setLoading(true);
