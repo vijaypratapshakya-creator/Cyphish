@@ -32,15 +32,43 @@ function bind(client, cfg) {
 function search(client, base, options) {
   return new Promise((resolve, reject) => {
     const entries = [];
+    let isSettled = false;
+
     client.search(base, options, (error, result) => {
       if (error) return reject(error);
-      result.on('searchEntry', (entry) => entries.push({ dn: entry.objectName, ...entry.object }));
-      result.on('error', reject);
-      result.on('end', (resultValue) =>
-        resultValue.status === 0
-          ? resolve(entries)
-          : reject(new Error(`LDAP search failed with status ${resultValue.status}`))
-      );
+
+      result.on('searchEntry', (entry) => {
+        entries.push({ dn: entry.objectName, ...entry.object });
+      });
+
+      result.on('error', (err) => {
+        if (isSettled) return;
+        // If size limit was reached (LDAP result code 4) and we already collected entries, treat as non-fatal
+        const isSizeLimit =
+          err.name === 'SizeLimitExceededError' ||
+          err.code === 4 ||
+          String(err.message || '').toLowerCase().includes('size limit') ||
+          String(err.message || '').includes('status 4');
+
+        if (isSizeLimit && entries.length > 0) {
+          isSettled = true;
+          return resolve(entries);
+        }
+        isSettled = true;
+        reject(err);
+      });
+
+      result.on('end', (resultValue) => {
+        if (isSettled) return;
+        isSettled = true;
+        const status = resultValue ? resultValue.status : 0;
+        // status 0 = success, status 4 = size limit exceeded (non-fatal if entries were retrieved)
+        if (status === 0 || (status === 4 && entries.length > 0)) {
+          resolve(entries);
+        } else {
+          reject(new Error(`LDAP search failed with status ${status}`));
+        }
+      });
     });
   });
 }
@@ -71,6 +99,7 @@ export async function testLdapConnection(customConfig = null) {
         ? customConfig.bindPassword 
         : settings.ldap.bindPassword,
       baseDN: customConfig?.baseDN || settings.ldap.baseDN,
+      userFilter: customConfig?.userFilter || settings.ldap.userFilter,
       timeout: Number(customConfig?.timeout || settings.ldap.timeout || 10000),
     };
   }
@@ -82,17 +111,29 @@ export async function testLdapConnection(customConfig = null) {
   const client = clientFor(cfg);
   try {
     await bind(client, cfg);
-    // Perform quick test search for 1 user
+
+    const testFilter = cfg.userFilter && String(cfg.userFilter).trim()
+      ? String(cfg.userFilter).trim()
+      : '(&(objectCategory=person)(objectClass=user))';
+
+    // Perform quick test search using Paged Results Control to avoid server size limit errors
     const entries = await search(client, cfg.baseDN, {
       scope: 'sub',
-      filter: '(&(objectCategory=person)(objectClass=user))',
-      attributes: ['displayName', 'mail', 'sAMAccountName', 'department'],
-      sizeLimit: 1,
+      filter: testFilter,
+      attributes: ['displayName', 'mail', 'sAMAccountName', 'department', 'userPrincipalName'],
+      paged: { pageSize: 10, pagePause: false },
     });
+
+    const sample = entries[0] || null;
+    const sampleName = sample?.displayName || sample?.sAMAccountName || sample?.mail || sample?.userPrincipalName;
+
     return {
       success: true,
-      message: `Successfully connected to LDAP server and authenticated as ${cfg.bindDN}. Found ${entries.length} test entry.`,
-      sampleEntry: entries[0] || null,
+      message: sampleName
+        ? `Successfully connected to LDAP server at ${cfg.url} and authenticated as ${cfg.bindDN}. Verified directory read access (Sample: ${sampleName}).`
+        : `Successfully connected to LDAP server at ${cfg.url} and authenticated as ${cfg.bindDN}.`,
+      sampleEntry: sample,
+      entryCount: entries.length,
     };
   } finally {
     try {
@@ -142,6 +183,7 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
       clauses.push(`(|(displayName=*${value}*)(mail=*${value}*)(sAMAccountName=*${value}*)(userPrincipalName=*${value}*))`);
     }
 
+    // Use RFC 2696 Simple Paged Results to support directories of any scale without SizeLimitExceededError
     const entries = await search(client, base, {
       scope: 'sub',
       filter: `(&${clauses.join('')})`,
@@ -160,7 +202,10 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
         'distinguishedName',
         'memberOf',
       ],
-      sizeLimit: 5000,
+      paged: {
+        pageSize: 500,
+        pagePause: false,
+      },
     });
 
     return entries
@@ -194,3 +239,106 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
     } catch {}
   }
 }
+
+/**
+ * Retrieves aggregated directory metadata (Departments, OUs, Security Groups, and Synced User Counts)
+ */
+export async function getDirectoryMetadata() {
+  const isEnabled = await ldapEnabled();
+  
+  // Import Contact dynamically or directly
+  const { default: Contact } = await import('../models/Contact.js');
+
+  const syncedCount = await Contact.countDocuments({ source: 'ldap' });
+  const totalContacts = await Contact.countDocuments({});
+
+  const rawDepartments = await Contact.distinct('department', { source: 'ldap' });
+  const rawOus = await Contact.distinct('ou', { source: 'ldap' });
+  const rawGroups = await Contact.distinct('directoryGroups', { source: 'ldap' });
+
+  const departments = rawDepartments.filter(Boolean).sort();
+  const ous = rawOus.filter(Boolean).sort();
+  
+  // Clean up group names from distinguished names (e.g. CN=Engineers,OU=Groups... -> Engineers)
+  const groups = rawGroups
+    .filter(Boolean)
+    .map((g) => {
+      const match = g.match(/^CN=([^,]+)/i);
+      return match ? match[1] : g;
+    })
+    .filter((v, i, a) => a.indexOf(v) === i)
+    .sort();
+
+  return {
+    ldapEnabled: isEnabled,
+    syncedCount,
+    totalContacts,
+    departments,
+    ous,
+    groups,
+  };
+}
+
+/**
+ * Queries contacts based on Active Directory criteria (Department, OU, Group, Search query, or All)
+ */
+export async function findDirectoryContactsByFilter({
+  departments = [],
+  ous = [],
+  groups = [],
+  query = '',
+  all = false,
+  selectedUserEmails = [],
+} = {}) {
+  const { default: Contact } = await import('../models/Contact.js');
+
+  const filter = { source: 'ldap' };
+  const conditions = [];
+
+  if (all) {
+    // Return all LDAP synced contacts
+    return await Contact.find(filter).sort({ lastName: 1, firstName: 1 });
+  }
+
+  if (Array.isArray(selectedUserEmails) && selectedUserEmails.length > 0) {
+    const normalized = selectedUserEmails.map((e) => String(e).toLowerCase().trim());
+    return await Contact.find({
+      email: { $in: normalized },
+    });
+  }
+
+  if (Array.isArray(departments) && departments.length > 0) {
+    conditions.push({ department: { $in: departments } });
+  }
+
+  if (Array.isArray(ous) && ous.length > 0) {
+    conditions.push({ ou: { $in: ous } });
+  }
+
+  if (Array.isArray(groups) && groups.length > 0) {
+    // Match either raw CN or full DN in directoryGroups array
+    const groupRegexes = groups.map((g) => new RegExp(`(^CN=${g},|${g})`, 'i'));
+    conditions.push({ directoryGroups: { $in: groupRegexes } });
+  }
+
+  if (query && String(query).trim()) {
+    const q = String(query).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(q, 'i');
+    conditions.push({
+      $or: [
+        { firstName: regex },
+        { lastName: regex },
+        { username: regex },
+        { email: regex },
+        { department: regex },
+      ],
+    });
+  }
+
+  if (conditions.length > 0) {
+    filter.$or = conditions;
+  }
+
+  return await Contact.find(filter).sort({ lastName: 1, firstName: 1 });
+}
+

@@ -6,9 +6,11 @@ import {
     deleteAudience,
     addContactToAudience,
     deleteContactFromAudience,
-    uploadCSVToAudience
+    uploadCSVToAudience,
+    createAudienceFromAD,
+    importADToAudience,
 } from '../controllers/audienceController.js';
-import { uploadCSV } from '../middlewares/uploadCSV.js'; // Updated path for middleware
+import { uploadCSV } from '../middlewares/uploadCSV.js';
 import authMiddleware from '../middlewares/authMiddleware.js';
 import requireAdmin from '../middlewares/requireAdmin.js';
 
@@ -20,7 +22,9 @@ router.use(requireAdmin);
 
 // Create
 router.post('/', uploadCSV, createAudience);
+router.post('/import-ad', createAudienceFromAD);
 router.post('/:id/contact', addContactToAudience);
+router.post('/:id/import-ad', importADToAudience);
 
 // Upload CSV to existing audience
 router.post('/:id/upload-csv', uploadCSV, uploadCSVToAudience);
@@ -32,6 +36,5 @@ router.get('/:id', getAudienceById);
 // Delete
 router.delete('/:id', deleteAudience);
 router.delete('/:id/contact/:contactId', deleteContactFromAudience);
-
 
 export default router;

@@ -24,97 +24,79 @@ function parseCssSettingsFromBody(body) {
 // Create a new template
 export const createTemplate = async (req, res) => {
     try {
-        const { name, subject, type } = req.body;
+        const { name, subject, category, difficulty, tags } = req.body;
+        const type = req.body.type || req.body.category || 'custom';
         let htmlContent = '';
-        let sourceFormat = 'html';
+        let sourceFormat = req.body.sourceFormat || 'html';
         let markdownContent = '';
         let cssSettings = null;
 
-        // Markdown path: body has sourceFormat + markdownContent (no file)
-        if (req.body.sourceFormat === 'markdown' && req.body.markdownContent != null) {
+        if (!name || !String(name).trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Template name is required',
+            });
+        }
+
+        if (!subject || !String(subject).trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email subject is required',
+            });
+        }
+
+        // 1. Direct HTML content in request body (AI Generator, HTML Composer, or Raw HTML paste)
+        if (req.body.htmlContent != null || req.body.content != null || req.body.html != null) {
+            htmlContent = String(req.body.htmlContent ?? req.body.content ?? req.body.html ?? '');
+            sourceFormat = req.body.sourceFormat || 'html';
+        }
+        // 2. Markdown path: body has sourceFormat === 'markdown' or markdownContent provided
+        else if (req.body.sourceFormat === 'markdown' || req.body.markdownContent != null) {
             sourceFormat = 'markdown';
-            markdownContent = String(req.body.markdownContent);
+            markdownContent = String(req.body.markdownContent || '');
             cssSettings = parseCssSettingsFromBody(req.body);
 
-            if (!name || !subject || !type) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'name, subject, and type are required',
-                });
-            }
-
             const rawHtml = await convertMarkdownToHtml(markdownContent);
-
-            const placeholderErrors = validatePlaceholders(rawHtml || '', SUPPORTED_PLACEHOLDER_FIELDS);
             htmlContent = applyCssSettings(rawHtml || '<p></p>', cssSettings);
-            if (placeholderErrors.length > 0) {
-                const displayedErrors = placeholderErrors.slice(0, 3);
-                let errorMessage = `Invalid placeholders: ${displayedErrors.join(', ')}`;
-                if (placeholderErrors.length > 3) {
-                    errorMessage += ` and ${placeholderErrors.length - 3} more`;
-                }
-                return res.status(400).json({ success: false, message: errorMessage });
-            }
-        } else if (req.file) {
-            // File upload path (existing behavior)
-            const filePath = path.join(__dirname, '..', 'uploads', req.file.filename);
-
-            if (req.file.mimetype !== 'text/html') {
-                fs.unlinkSync(filePath);
-                return res.status(400).json({
-                    success: false,
-                    message: 'Only HTML files are allowed',
-                });
-            }
+        }
+        // 3. File upload path (multipart file upload of .html or .eml)
+        else if (req.file) {
+            const filePath = req.file.path || path.join(__dirname, '..', 'uploads', req.file.filename);
 
             try {
                 htmlContent = fs.readFileSync(filePath, 'utf-8');
-                fs.unlinkSync(filePath);
+                sourceFormat = req.file.originalname?.endsWith('.eml') ? 'raw_eml' : 'html';
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
             } catch (error) {
                 return res.status(500).json({
                     success: false,
                     message: error.message,
                 });
             }
-
-            const HTMLErrors = await validateHTMLContent(htmlContent);
-            if (HTMLErrors.length > 0) {
-                const displayedErrors = HTMLErrors.slice(0, 3);
-                let errorMessage = `Invalid HTML Content: ${displayedErrors.join(', ')}`;
-                if (HTMLErrors.length > 3) {
-                    const remainingErrorsCount = HTMLErrors.length - 3;
-                    errorMessage += ` and ${remainingErrorsCount} more error${remainingErrorsCount > 1 ? 's' : ''}`;
-                }
-                return res.status(400).json({
-                    success: false,
-                    message: errorMessage,
-                });
-            }
-
-            const placeholderErrors = validatePlaceholders(htmlContent, SUPPORTED_PLACEHOLDER_FIELDS);
-            if (placeholderErrors.length > 0) {
-                const displayedErrors = placeholderErrors.slice(0, 3);
-                let errorMessage = `Invalid placeholders detected: ${displayedErrors.join(', ')}`;
-                if (placeholderErrors.length > 3) {
-                    const remainingErrorsCount = placeholderErrors.length - 3;
-                    errorMessage += ` and ${remainingErrorsCount} more error${remainingErrorsCount > 1 ? 's' : ''}`;
-                }
-                return res.status(400).json({
-                    success: false,
-                    message: errorMessage,
-                });
-            }
         } else {
             return res.status(400).json({
                 success: false,
-                message: 'Provide either an HTML file upload or markdown content (sourceFormat: "markdown", markdownContent)',
+                message: 'Template content cannot be empty. Provide htmlContent, markdownContent, or upload an HTML file.',
+            });
+        }
+
+        const HTMLErrors = await validateHTMLContent(htmlContent);
+        if (HTMLErrors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: HTMLErrors.join(', '),
             });
         }
 
         const template = new Template({
-            name,
-            subject,
-            type,
+            name: String(name).trim(),
+            subject: String(subject).trim(),
+            type: String(type).trim(),
+            category: category ? String(category).trim() : 'IT & Security',
+            difficulty: Number(difficulty) || 3,
+            tags: Array.isArray(tags) ? tags : (tags ? [String(tags)] : ['Phishing Drill']),
             htmlContent,
             sourceFormat,
             markdownContent: sourceFormat === 'markdown' ? markdownContent : undefined,
@@ -139,7 +121,7 @@ export const createTemplate = async (req, res) => {
 // Get all templates
 export const getAllTemplates = async (req, res) => {
     try {
-        const templates = await Template.find().sort({ createdAt: -1 });;
+        const templates = await Template.find().sort({ createdAt: -1 });
         res.status(200).json({
             success: true,
             data: templates
@@ -239,24 +221,35 @@ export const updateTemplate = async (req, res) => {
         }
 
         const updatedData = {
-            name: req.body.name ?? template.name,
-            subject: req.body.subject ?? template.subject,
+            name: req.body.name != null ? String(req.body.name).trim() : template.name,
+            subject: req.body.subject != null ? String(req.body.subject).trim() : template.subject,
+            category: req.body.category != null ? String(req.body.category).trim() : template.category,
+            type: req.body.type != null ? String(req.body.type).trim() : template.type,
+            difficulty: req.body.difficulty !== undefined ? Number(req.body.difficulty) : template.difficulty,
+            tags: req.body.tags != null ? (Array.isArray(req.body.tags) ? req.body.tags : [String(req.body.tags)]) : template.tags,
         };
 
-        if (req.body.markdownContent != null && String(req.body.markdownContent).trim() !== '') {
+        if (req.file) {
+            const filePath = req.file.path || path.join(__dirname, '..', 'uploads', req.file.filename);
+            try {
+                updatedData.htmlContent = fs.readFileSync(filePath, 'utf-8');
+                updatedData.sourceFormat = req.file.originalname?.endsWith('.eml') ? 'raw_eml' : 'html';
+                updatedData.markdownContent = '';
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            } catch (err) {
+                return res.status(500).json({ success: false, message: err.message });
+            }
+        } else if (req.body.htmlContent != null || req.body.content != null || req.body.html != null) {
+            updatedData.htmlContent = String(req.body.htmlContent ?? req.body.content ?? req.body.html);
+            updatedData.sourceFormat = req.body.sourceFormat || 'html';
+            updatedData.markdownContent = '';
+        } else if (req.body.markdownContent != null && String(req.body.markdownContent).trim() !== '') {
             const markdownContent = String(req.body.markdownContent);
             const cssSettings = parseCssSettingsFromBody(req.body);
             const rawHtml = await convertMarkdownToHtml(markdownContent);
-
-            const placeholderErrors = validatePlaceholders(rawHtml || '', SUPPORTED_PLACEHOLDER_FIELDS);
-            if (placeholderErrors.length > 0) {
-                const displayedErrors = placeholderErrors.slice(0, 3);
-                const errorMessage = `Invalid placeholders: ${displayedErrors.join(', ')}`;
-                return res.status(400).json({ success: false, message: errorMessage });
-            }
-
-            const htmlContent = applyCssSettings(rawHtml || '<p></p>', cssSettings);
-            updatedData.htmlContent = htmlContent;
+            updatedData.htmlContent = applyCssSettings(rawHtml || '<p></p>', cssSettings);
             updatedData.sourceFormat = 'markdown';
             updatedData.markdownContent = markdownContent;
             updatedData.cssSettings = cssSettings ?? template.cssSettings;
@@ -268,10 +261,6 @@ export const updateTemplate = async (req, res) => {
             updatedData.sourceFormat = 'markdown';
             updatedData.markdownContent = '';
             updatedData.cssSettings = cssSettings ?? template.cssSettings;
-        } else if (req.body.htmlContent != null) {
-            updatedData.htmlContent = req.body.htmlContent;
-            updatedData.sourceFormat = 'html';
-            updatedData.markdownContent = '';
         } else {
             updatedData.htmlContent = template.htmlContent;
         }

@@ -15,27 +15,48 @@ import {
     Menu,
     MenuItem
 } from '@mui/material';
-import { Group, Person, Add, UploadFile as UploadFileIcon, MoreVert as MoreVertIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import {
+    Group,
+    Person,
+    Add,
+    UploadFile as UploadFileIcon,
+    MoreVert as MoreVertIcon,
+    Delete as DeleteIcon,
+    Business as BusinessIcon,
+} from '@mui/icons-material';
 import Sidebar from '../../components/Sidebar';
 import Footer from '../../components/Footer';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAudience } from '../../hooks/useAudience';
 
-// Import new components
+// Import components
 import ContactDetailsDialog from '../../components/ContactDetailsDialog';
 import AddContactDialog from '../../components/AddContactDialog';
 import CSVUploadDialog from '../../components/CSVUploadDialog';
 import DeleteAudienceDialog from '../../components/DeleteAudienceDialog';
 import ResponsiveContactsTable from '../../components/ResponsiveContactsTable';
+import ADImportDialog from '../../components/ADImportDialog';
 
 const AudienceDetail = () => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { audienceDetail, fetchAudienceDetail, deleteAudience, addContact, deleteContact, uploadCSVToAudience, loading, error } = useAudience();
+    const {
+        audienceDetail,
+        fetchAudienceDetail,
+        deleteAudience,
+        addContact,
+        deleteContact,
+        uploadCSVToAudience,
+        importADToAudience,
+        loading,
+        error,
+    } = useAudience();
     const [contacts, setContacts] = useState([]);
     const [hasFetched, setHasFetched] = useState(false);
     const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
     const [openAddDialog, setOpenAddDialog] = useState(false);
+    const [openADDialog, setOpenADDialog] = useState(false);
+    const [adImporting, setAdImporting] = useState(false);
     const [newContact, setNewContact] = useState({
         firstName: '',
         lastName: '',
@@ -109,6 +130,37 @@ const AudienceDetail = () => {
         setUploadMessage('');
     };
 
+    // Handler for Active Directory import
+    const handleADImport = async (payload) => {
+        setAdImporting(true);
+        try {
+            const response = await importADToAudience(id, payload);
+            if (response.success) {
+                setOpenADDialog(false);
+                setErrorSnackbar({
+                    open: true,
+                    message: response.message || `Active Directory contacts imported successfully!`,
+                });
+                const updatedResponse = await fetchAudienceDetail(id);
+                if (updatedResponse?.data?.contacts) {
+                    setContacts(updatedResponse.data.contacts);
+                }
+            } else {
+                setErrorSnackbar({
+                    open: true,
+                    message: response.message || 'Failed to import Active Directory contacts',
+                });
+            }
+        } catch (error) {
+            setErrorSnackbar({
+                open: true,
+                message: error.message || 'Error occurred during Active Directory import',
+            });
+        } finally {
+            setAdImporting(false);
+        }
+    };
+
     useEffect(() => {
         if (id && !hasFetched) {
             fetchAudienceDetail(id).then(response => {
@@ -154,12 +206,15 @@ const AudienceDetail = () => {
     };
 
     const handleAddContactChange = (e) => {
-        const { name, value } = e.target;
-        setNewContact({ ...newContact, [name]: value });
-        
-        // Clear error when user starts typing
-        if (formErrors[name]) {
-            setFormErrors({ ...formErrors, [name]: '' });
+        if (e && e.target) {
+            const { name, value } = e.target;
+            setNewContact(prev => ({ ...prev, [name]: value }));
+            if (formErrors[name]) {
+                setFormErrors(prev => ({ ...prev, [name]: '' }));
+            }
+        } else if (e && typeof e === 'object') {
+            setNewContact(prev => ({ ...prev, ...e }));
+            setFormErrors({});
         }
     };
 
@@ -273,6 +328,10 @@ const AudienceDetail = () => {
                                     horizontal: 'right',
                                 }}
                             >
+                                <MenuItem onClick={() => { handleMenuClose(); setOpenADDialog(true); }}>
+                                    <BusinessIcon fontSize="small" sx={{ mr: 1, color: '#1976d2' }} />
+                                    Import from Active Directory
+                                </MenuItem>
                                 <MenuItem onClick={() => setOpenCSVDialog(true)}>
                                     <UploadFileIcon fontSize="small" sx={{ mr: 1 }} />
                                     Upload CSV
@@ -462,6 +521,28 @@ const AudienceDetail = () => {
                                 mt: { xs: 1, md: 1.5 }
                             }}>
                                 <Button
+                                    variant="outlined"
+                                    color="primary"
+                                    startIcon={<BusinessIcon />}
+                                    onClick={() => setOpenADDialog(true)}
+                                    sx={{
+                                        borderRadius: '8px',
+                                        textTransform: 'none',
+                                        fontWeight: 500,
+                                        px: { xs: 1.5, md: 2 },
+                                        py: { xs: 0.5, md: 0.75 },
+                                        fontSize: { xs: '0.8rem', md: '0.875rem' },
+                                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                                        mr: 1.5,
+                                        '&:hover': {
+                                            transform: 'translateY(-1px)'
+                                        },
+                                        transition: 'all 0.2s ease-in-out'
+                                    }}
+                                >
+                                    Import from AD
+                                </Button>
+                                <Button
                                     variant="contained"
                                     color="primary"
                                     startIcon={<Add />}
@@ -498,6 +579,14 @@ const AudienceDetail = () => {
                 </Container>
                 <Footer />
             </Box>
+
+            {/* Active Directory Import Dialog */}
+            <ADImportDialog
+                open={openADDialog}
+                onClose={() => setOpenADDialog(false)}
+                onImport={handleADImport}
+                loading={adImporting}
+            />
 
             {/* Delete Audience Dialog */}
             <DeleteAudienceDialog

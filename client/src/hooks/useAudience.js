@@ -171,5 +171,61 @@ export const useAudience = () => {
         }
     };
 
-    return { audiences, audienceDetail, createAudience, fetchAudienceDetail, deleteAudience, addContact, deleteContact, uploadCSVToAudience, loading, error };
+    const createAudienceFromAD = async (payload) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await axiosInstance.post('/api/audience/import-ad', payload);
+            if (response.data.success) {
+                setAudiences((prev) => [...prev, response.data.data]);
+                return { success: true, data: response.data.data };
+            } else {
+                setError(response.data.message);
+                return { success: false, message: response.data.message };
+            }
+        } catch (error) {
+            const errorMessage = error.response?.data?.message || error.message;
+            setError(errorMessage);
+            return { success: false, message: errorMessage };
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const importADToAudience = async (audienceId, payload) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await axiosInstance.post(`/api/audience/${audienceId}/import-ad`, payload);
+            if (response.data.success) {
+                await fetchAudienceDetail(audienceId);
+                return { success: true, data: response.data.data, message: response.data.message };
+            } else {
+                setError(response.data.message);
+                return { success: false, message: response.data.message };
+            }
+        } catch (error) {
+            const errorMessage = error.response?.data?.message || error.message;
+            setError(errorMessage);
+            return { success: false, message: errorMessage };
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return {
+        audiences,
+        audienceDetail,
+        createAudience,
+        createAudienceFromAD,
+        importADToAudience,
+        fetchAudienceDetail,
+        deleteAudience,
+        addContact,
+        deleteContact,
+        uploadCSVToAudience,
+        loading,
+        error,
+    };
 };
+

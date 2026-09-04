@@ -80,3 +80,24 @@ export async function triggerDirectorySyncNow() {
   const response = await axiosInstance.post('/api/directory/sync-now');
   return response.data;
 }
+
+export async function getDirectoryMetadata() {
+  const response = await axiosInstance.get('/api/directory/metadata');
+  return response.data;
+}
+
+export async function queryDirectoryTargets(params) {
+  const response = await axiosInstance.get('/api/directory/targets', { params });
+  return response.data;
+}
+
+export async function createAudienceFromAD(payload) {
+  const response = await axiosInstance.post('/api/audience/import-ad', payload);
+  return response.data;
+}
+
+export async function importADToExistingAudience(audienceId, payload) {
+  const response = await axiosInstance.post(`/api/audience/${audienceId}/import-ad`, payload);
+  return response.data;
+}
+

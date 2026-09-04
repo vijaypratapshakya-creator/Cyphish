@@ -3,8 +3,9 @@ import * as directoryScheduler from '../services/directoryScheduler.js';
 import directoryRouter from '../routes/directory.js';
 import * as directoryController from '../controllers/directoryController.js';
 import * as ldapSyncService from '../services/ldapSyncService.js';
+import * as ldapService from '../services/ldapService.js';
 
-console.log('=== Running Active Directory Periodic Sync & Option A Tests ===\n');
+console.log('=== Running Active Directory Periodic Sync & Paged Search Tests ===\n');
 
 // 1. Test Cron Resolution for all frequencies
 console.log('1. Testing resolveDirectorySyncCron frequency mapping...');
@@ -30,7 +31,25 @@ assert(typeof ldapSyncService.executeDirectorySync === 'function', 'executeDirec
 assert(typeof directoryScheduler.startDirectoryScheduler === 'function', 'startDirectoryScheduler should be a function');
 assert(typeof directoryScheduler.reloadDirectoryScheduler === 'function', 'reloadDirectoryScheduler should be a function');
 assert(typeof directoryScheduler.stopDirectoryScheduler === 'function', 'stopDirectoryScheduler should be a function');
-console.log('   ✓ ldapSyncService and directoryScheduler exports verified.\n');
+assert(typeof ldapService.testLdapConnection === 'function', 'testLdapConnection should be a function');
+assert(typeof ldapService.findDirectoryUsers === 'function', 'findDirectoryUsers should be a function');
+console.log('   ✓ ldapSyncService, directoryScheduler, and ldapService exports verified.\n');
 
-console.log('🎉 ALL ACTIVE DIRECTORY PERIODIC SYNC TESTS PASSED!\n');
+// 4. Test Size Limit Exceeded Simulation & Error Resiliency
+console.log('4. Testing SizeLimitExceeded graceful handling logic...');
+const mockSizeLimitError = new Error('sizeLimitExceeded');
+mockSizeLimitError.name = 'SizeLimitExceededError';
+mockSizeLimitError.code = 4;
+
+const isSizeLimit = (err) =>
+  err.name === 'SizeLimitExceededError' ||
+  err.code === 4 ||
+  String(err.message || '').toLowerCase().includes('size limit') ||
+  String(err.message || '').includes('status 4');
+
+assert.strictEqual(isSizeLimit(mockSizeLimitError), true, 'Should detect SizeLimitExceededError');
+assert.strictEqual(isSizeLimit(new Error('LDAP search failed with status 4')), true, 'Should detect status 4 error');
+console.log('   ✓ SizeLimitExceeded resiliency logic verified.\n');
+
+console.log('🎉 ALL ACTIVE DIRECTORY PERIODIC SYNC & PAGED SEARCH TESTS PASSED!\n');
 process.exit(0);

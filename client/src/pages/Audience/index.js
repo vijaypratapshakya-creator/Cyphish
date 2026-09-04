@@ -8,8 +8,6 @@ import {
   Card,
   CardContent,
   Chip,
-  IconButton,
-  Tooltip,
   CircularProgress,
   Alert,
 } from '@mui/material';
@@ -18,7 +16,6 @@ import AddIcon from '@mui/icons-material/Add';
 import GroupIcon from '@mui/icons-material/Group';
 import PersonOutlineIcon from '@mui/icons-material/PersonOutline';
 import ArrowForwardIosIcon from '@mui/icons-material/ArrowForwardIos';
-import BusinessIcon from '@mui/icons-material/Business';
 import CloudSyncIcon from '@mui/icons-material/CloudSync';
 import Sidebar from '../../components/Sidebar';
 import Footer from '../../components/Footer';

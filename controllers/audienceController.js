@@ -6,6 +6,7 @@ import path from 'path';
 import { parseCSVAndCreateContacts } from '../utils/fileUtils.js';
 import { validateCSVHeaders, validateCSVRows } from '../utils/validationUtils.js';
 import { __dirname } from '../utils/utils.js';
+import { findDirectoryContactsByFilter } from '../services/ldapService.js';
 
 // Create a new audience (supports both manual input and CSV upload)
 export const createAudience = async (req, res) => {
@@ -444,6 +445,133 @@ export const uploadCSVToAudience = async (req, res) => {
         res.status(500).json({
             success: false,
             message: error.message
+        });
+    }
+};
+
+// Create a new audience directly from Active Directory filters / users
+export const createAudienceFromAD = async (req, res) => {
+    try {
+        const { name, importMode = 'all', departments = [], ous = [], groups = [], query = '', selectedUserEmails = [] } = req.body;
+
+        if (!name || !name.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'Audience name is required'
+            });
+        }
+
+        const matchedContacts = await findDirectoryContactsByFilter({
+            all: importMode === 'all',
+            departments,
+            ous,
+            groups,
+            query,
+            selectedUserEmails,
+        });
+
+        if (matchedContacts.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No Active Directory contacts matched the specified selection criteria.'
+            });
+        }
+
+        const contactIds = matchedContacts.map(c => c._id);
+
+        const newAudience = new Audience({
+            name: name.trim(),
+            contacts: contactIds,
+        });
+        await newAudience.save();
+
+        res.status(201).json({
+            success: true,
+            message: `Audience "${newAudience.name}" created successfully with ${contactIds.length} Active Directory targets.`,
+            data: {
+                ...newAudience.toObject(),
+                contactCount: contactIds.length,
+            },
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to create audience from Active Directory'
+        });
+    }
+};
+
+// Import / append Active Directory contacts to an existing audience
+export const importADToAudience = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { importMode = 'all', departments = [], ous = [], groups = [], query = '', selectedUserEmails = [] } = req.body;
+
+        const audience = await Audience.findById(id).populate('contacts');
+        if (!audience) {
+            return res.status(404).json({
+                success: false,
+                message: 'Audience not found'
+            });
+        }
+
+        const matchedContacts = await findDirectoryContactsByFilter({
+            all: importMode === 'all',
+            departments,
+            ous,
+            groups,
+            query,
+            selectedUserEmails,
+        });
+
+        if (matchedContacts.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No Active Directory contacts matched the specified criteria.'
+            });
+        }
+
+        const existingContactIdSet = new Set((audience.contacts || []).map(c => (c._id || c).toString()));
+        const existingEmailSet = new Set((audience.contacts || []).map(c => (c.email || '').toLowerCase()));
+
+        let addedCount = 0;
+        let duplicateCount = 0;
+
+        for (const contact of matchedContacts) {
+            const contactIdStr = contact._id.toString();
+            const contactEmail = (contact.email || '').toLowerCase();
+
+            if (existingContactIdSet.has(contactIdStr) || (contactEmail && existingEmailSet.has(contactEmail))) {
+                duplicateCount++;
+            } else {
+                audience.contacts.push(contact._id);
+                existingContactIdSet.add(contactIdStr);
+                if (contactEmail) existingEmailSet.add(contactEmail);
+                addedCount++;
+            }
+        }
+
+        if (addedCount > 0) {
+            await audience.save();
+        }
+
+        // Re-populate and fetch updated contact count
+        const updatedAudience = await Audience.findById(id).populate('contacts');
+
+        res.status(200).json({
+            success: true,
+            message: `Active Directory import complete: added ${addedCount} new targets (${duplicateCount} already existed).`,
+            data: {
+                added: addedCount,
+                duplicates: duplicateCount,
+                contactCount: updatedAudience.contacts.length,
+                contacts: updatedAudience.contacts,
+            },
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to import Active Directory contacts to audience'
         });
     }
 };
