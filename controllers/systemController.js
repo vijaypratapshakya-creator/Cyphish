@@ -215,6 +215,29 @@ export async function getLandingPageConfig(req, res) {
   }
 }
 
+export async function getSessionConfig(req, res) {
+  try {
+    const settings = await getSystemSettings().catch(() => null);
+    const timeoutMinutes = settings?.security?.sessionInactivityTimeoutMinutes || 15;
+    const enableBruteForce = settings?.security?.enableBruteForceProtection !== false;
+    res.json({
+      success: true,
+      data: {
+        sessionInactivityTimeoutMinutes: timeoutMinutes,
+        enableBruteForceProtection: enableBruteForce,
+      },
+    });
+  } catch (err) {
+    res.json({
+      success: true,
+      data: {
+        sessionInactivityTimeoutMinutes: 15,
+        enableBruteForceProtection: true,
+      },
+    });
+  }
+}
+
 const systemController = {
   setupStatus,
   healthCheck,
@@ -225,6 +248,7 @@ const systemController = {
   triggerRetentionCleanup,
   getSystemStats,
   getLandingPageConfig,
+  getSessionConfig,
 };
 
 export default systemController;

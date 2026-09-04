@@ -117,6 +117,13 @@ const Settings = () => {
     subject: 'CyPhish Scheduled Awareness Report',
   });
 
+  const [security, setSecurity] = useState({
+    sessionInactivityTimeoutMinutes: 15,
+    maxFailedLoginAttempts: 5,
+    accountLockoutMinutes: 15,
+    enableBruteForceProtection: true,
+  });
+
   // User Management State
   const [usersList, setUsersList] = useState([]);
   const [userModalOpen, setUserModalOpen] = useState(false);
@@ -216,6 +223,14 @@ const Settings = () => {
             subject: d.scheduledReports.subject || 'CyPhish Scheduled Awareness Report',
           });
         }
+        if (d.security) {
+          setSecurity({
+            sessionInactivityTimeoutMinutes: d.security.sessionInactivityTimeoutMinutes || 15,
+            maxFailedLoginAttempts: d.security.maxFailedLoginAttempts || 5,
+            accountLockoutMinutes: d.security.accountLockoutMinutes || 15,
+            enableBruteForceProtection: d.security.enableBruteForceProtection !== false,
+          });
+        }
       }
 
       if (statsRes.success && statsRes.data) {
@@ -252,6 +267,7 @@ const Settings = () => {
         general,
         landingPage,
         siem,
+        security,
         ldap: {
           ...ldap,
           bindPassword: ldap.bindPassword ? ldap.bindPassword : '[UNCHANGED]',
@@ -879,6 +895,90 @@ const Settings = () => {
                         </Button>
                       </Box>
                     </Grid>
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 2, borderColor: 'rgba(255,255,255,0.08)' }} />
+                    </Grid>
+
+                    {/* Security & Inactivity Session Policy */}
+                    <Grid item xs={12}>
+                      <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.5 }}>
+                        🔒 Console Security, Inactivity Timeout & Anti-Bruteforce Policy
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+                        Enforce automated operator console sign-out on idle timeout and protect administrator accounts from credential brute-force attacks.
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth>
+                        <InputLabel sx={{ color: '#94a3b8' }}>Session Inactivity Auto Sign-Out</InputLabel>
+                        <Select
+                          value={security.sessionInactivityTimeoutMinutes}
+                          label="Session Inactivity Auto Sign-Out"
+                          onChange={(e) => setSecurity({ ...security, sessionInactivityTimeoutMinutes: Number(e.target.value) })}
+                          sx={{ bgcolor: '#0b0f19' }}
+                        >
+                          <MenuItem value={5}>5 Minutes (High Security)</MenuItem>
+                          <MenuItem value={10}>10 Minutes</MenuItem>
+                          <MenuItem value={15}>15 Minutes (Default / Recommended)</MenuItem>
+                          <MenuItem value={30}>30 Minutes</MenuItem>
+                          <MenuItem value={60}>60 Minutes (1 Hour)</MenuItem>
+                          <MenuItem value={120}>120 Minutes (2 Hours)</MenuItem>
+                          <MenuItem value={480}>480 Minutes (8 Hours)</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <Typography variant="caption" sx={{ color: '#64748b', mt: 0.5, display: 'block' }}>
+                        When no keyboard/mouse interaction occurs across tabs, a 60-second warning is displayed before automatic logout.
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Max Failed Logins before Lockout"
+                        value={security.maxFailedLoginAttempts}
+                        onChange={(e) => setSecurity({ ...security, maxFailedLoginAttempts: Math.max(3, Number(e.target.value) || 5) })}
+                        helperText="Default: 5 consecutive failed attempts locks account"
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Account Lockout Duration (Minutes)"
+                        value={security.accountLockoutMinutes}
+                        onChange={(e) => setSecurity({ ...security, accountLockoutMinutes: Math.max(1, Number(e.target.value) || 15) })}
+                        helperText="Duration locked accounts must wait before next attempt"
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <Box sx={{ mt: 1 }}>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={security.enableBruteForceProtection}
+                              onChange={(e) => setSecurity({ ...security, enableBruteForceProtection: e.target.checked })}
+                              color="primary"
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 600 }}>
+                                Enforce Brute-Force Account Lockout
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                                Defends against automated dictionary and credential-stuffing attacks.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                    </Grid>
+
                   </Grid>
                 </Box>
               )}

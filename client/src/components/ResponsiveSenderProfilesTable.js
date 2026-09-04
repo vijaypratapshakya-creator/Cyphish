@@ -120,21 +120,27 @@ const ResponsiveSenderProfilesTable = ({
                 );
             case 'email':
                 return (
-                    <Typography sx={{ 
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                    }}>
-                        {profile.email || 'N/A'}
-                    </Typography>
+                    <Box>
+                        <Typography sx={{ 
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: '0.875rem'
+                        }}>
+                            {profile.fromEmail || profile.email || 'N/A'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                            {profile.authType === 'credentials' ? `Auth: ${profile.authUsername || profile.email || 'user'}` : 'Auth: Anonymous (IP)'}
+                        </Typography>
+                    </Box>
                 );
             case 'secure':
                 return (
                     <Chip 
                         size="small"
-                        label={profile.secure ? "SSL/TLS" : "None"}
-                        color={profile.secure ? "success" : "default"}
-                        sx={{ fontSize: '0.75rem' }}
+                        label={profile.encryptionMode === 'starttls_strict' ? "TLS 1.3" : profile.encryptionMode === 'smtps_direct' ? "SMTPS (465)" : profile.secure ? "SSL/TLS" : "Plain"}
+                        color={profile.encryptionMode === 'starttls_strict' || profile.secure ? "success" : "default"}
+                        sx={{ fontSize: '0.72rem', fontWeight: 600 }}
                     />
                 );
             case 'created':

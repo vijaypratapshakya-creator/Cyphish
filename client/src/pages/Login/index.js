@@ -1,4 +1,5 @@
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import Avatar from '@mui/material/Avatar';
 import Button from '@mui/material/Button';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -8,7 +9,6 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
-// import { ReactComponent as GoogleIcon } from '../../assets/icons/google.svg';
 import { useLogin } from '../../hooks/useLogin';
 import Alert from '@mui/material/Alert';
 
@@ -16,6 +16,11 @@ const defaultTheme = createTheme();
 
 export default function SignIn() {
     const { handleSubmit, loading, error } = useLogin();
+    const location = useLocation();
+
+    const searchParams = new URLSearchParams(location.search);
+    const reason = searchParams.get('reason');
+    const timeout = searchParams.get('timeout') || '15';
 
     return (
         <ThemeProvider theme={defaultTheme}>
@@ -37,12 +42,19 @@ export default function SignIn() {
                     <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 1, mb: 2 }}>
                         Please enter your username and password to continue
                     </Typography>
+
+                    {reason === 'inactivity' && (
+                        <Alert severity="warning" sx={{ width: '100%', mb: 2 }}>
+                            You were automatically logged out after {timeout} minutes of inactivity. Please sign in again.
+                        </Alert>
+                    )}
+
                     {error && (
-                        <Alert severity="error" sx={{ mt: 2 }}>
+                        <Alert severity="error" sx={{ width: '100%', mt: 1, mb: 1 }}>
                             {error}
                         </Alert>
                     )}
-                    <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 2 }}>
+                    <Box component="form" onSubmit={handleSubmit} noValidate sx={{ mt: 2, width: '100%' }}>
                         <TextField
                             margin="normal"
                             required
@@ -83,7 +95,7 @@ export default function SignIn() {
                             variant="contained"
                             sx={{ mt: 3, mb: 2 }}
                             disabled={loading}>
-                            Sign In
+                            {loading ? 'Authenticating...' : 'Sign In'}
                         </Button>
                     </Box>
                 </Box>

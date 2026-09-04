@@ -9,6 +9,7 @@ const router = express.Router();
 router.get('/setup-status', systemController.setupStatus);
 router.get('/health', systemController.healthCheck);
 router.get('/landing-config', systemController.getLandingPageConfig);
+router.get('/session-config', systemController.getSessionConfig);
 
 // Protected Admin endpoints
 router.get('/settings', authMiddleware, requireAdmin, systemController.getSettings);

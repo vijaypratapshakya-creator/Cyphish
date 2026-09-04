@@ -158,6 +158,30 @@ const systemSettingSchema = new Schema({
       default: 'CyPhish Scheduled Awareness Report',
     },
   },
+  security: {
+    sessionInactivityTimeoutMinutes: {
+      type: Number,
+      default: 15,
+      min: 1,
+      max: 1440,
+    },
+    maxFailedLoginAttempts: {
+      type: Number,
+      default: 5,
+      min: 3,
+      max: 20,
+    },
+    accountLockoutMinutes: {
+      type: Number,
+      default: 15,
+      min: 1,
+      max: 1440,
+    },
+    enableBruteForceProtection: {
+      type: Boolean,
+      default: true,
+    },
+  },
 }, { timestamps: true });
 
 const SystemSetting = mongoose.model('SystemSetting', systemSettingSchema);

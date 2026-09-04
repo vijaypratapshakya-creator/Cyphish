@@ -186,6 +186,10 @@ export async function toggleLockUser(req, res) {
     }
 
     user.accountLocked = !user.accountLocked;
+    if (!user.accountLocked) {
+      user.failedLoginAttempts = 0;
+      user.lockUntil = null;
+    }
     await user.save();
 
     await audit({

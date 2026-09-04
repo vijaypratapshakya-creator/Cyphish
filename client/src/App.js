@@ -27,6 +27,8 @@ import Settings from './pages/Settings';
 import Account from './pages/Account';
 
 import NotFoundPage from './pages/NotFound';
+import useSessionInactivity from './hooks/useSessionInactivity';
+import SessionTimeoutWarningModal from './components/SessionTimeoutWarningModal';
 
 // Cyber Command & SOC Ops Theme (Full Dark Mode)
 const CYBER_COMMAND_THEME = createTheme({
@@ -161,40 +163,57 @@ const CYBER_COMMAND_THEME = createTheme({
   },
 });
 
+function AppContent() {
+  const { warningOpen, secondsRemaining, stayLoggedIn, logOutNow } = useSessionInactivity();
+
+  return (
+    <>
+      <Routes>
+        <Route path="/" element={<Navigate to="/console" replace />} />
+        <Route path="/console" element={<ConsoleEntry />} />
+        <Route path="/training/warning" element={<TrainingWarning />} />
+        <Route path="/training/report" element={<TrainingWarning />} />
+        <Route path="/account/signin" element={<Navigate to="/training/warning" replace />} />
+        
+        <Route path="/console/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/console/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+
+        <Route path="/console/audience" element={<ProtectedRoute><Audience /></ProtectedRoute>} />
+        <Route path="/console/audience/create" element={<ProtectedRoute><CreateAudience /></ProtectedRoute>} />
+        <Route path="/console/audience/:id" element={<ProtectedRoute><AudienceDetail /></ProtectedRoute>} />
+
+        <Route path="/console/sender-profile" element={<ProtectedRoute><SenderProfile /></ProtectedRoute>} />
+        <Route path="/console/sender-profile/create" element={<ProtectedRoute><CreateSenderProfile /></ProtectedRoute>} />
+
+        <Route path="/console/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
+        <Route path="/console/templates/new" element={<ProtectedRoute><TemplateComposer /></ProtectedRoute>} />
+        <Route path="/console/templates/:id/edit" element={<ProtectedRoute><TemplateComposer /></ProtectedRoute>} />
+
+        <Route path="/console/campaign" element={<ProtectedRoute><Campaign /></ProtectedRoute>} />
+        <Route path="/console/campaign/create" element={<ProtectedRoute><StartCampaign /></ProtectedRoute>} />
+        <Route path="/console/campaign/:id" element={<ProtectedRoute><CampaignDetail /></ProtectedRoute>} />
+
+        <Route path="/console/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+        <Route path="/console/account/*" element={<ProtectedRoute><Account /></ProtectedRoute>} />
+
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+
+      <SessionTimeoutWarningModal
+        open={warningOpen}
+        secondsRemaining={secondsRemaining}
+        onStayLoggedIn={stayLoggedIn}
+        onLogout={logOutNow}
+      />
+    </>
+  );
+}
+
 function App() {
   return (
     <ThemeProvider theme={CYBER_COMMAND_THEME}>
       <Router>
-        <Routes>
-          <Route path="/" element={<Navigate to="/console" replace />} />
-          <Route path="/console" element={<ConsoleEntry />} />
-          <Route path="/training/warning" element={<TrainingWarning />} />
-          <Route path="/training/report" element={<TrainingWarning />} />
-          <Route path="/account/signin" element={<Navigate to="/training/warning" replace />} />
-          
-          <Route path="/console/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/console/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-
-          <Route path="/console/audience" element={<ProtectedRoute><Audience /></ProtectedRoute>} />
-          <Route path="/console/audience/create" element={<ProtectedRoute><CreateAudience /></ProtectedRoute>} />
-          <Route path="/console/audience/:id" element={<ProtectedRoute><AudienceDetail /></ProtectedRoute>} />
-
-          <Route path="/console/sender-profile" element={<ProtectedRoute><SenderProfile /></ProtectedRoute>} />
-          <Route path="/console/sender-profile/create" element={<ProtectedRoute><CreateSenderProfile /></ProtectedRoute>} />
-
-          <Route path="/console/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
-          <Route path="/console/templates/new" element={<ProtectedRoute><TemplateComposer /></ProtectedRoute>} />
-          <Route path="/console/templates/:id/edit" element={<ProtectedRoute><TemplateComposer /></ProtectedRoute>} />
-
-          <Route path="/console/campaign" element={<ProtectedRoute><Campaign /></ProtectedRoute>} />
-          <Route path="/console/campaign/create" element={<ProtectedRoute><StartCampaign /></ProtectedRoute>} />
-          <Route path="/console/campaign/:id" element={<ProtectedRoute><CampaignDetail /></ProtectedRoute>} />
-
-          <Route path="/console/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/console/account/*" element={<ProtectedRoute><Account /></ProtectedRoute>} />
-
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
+        <AppContent />
       </Router>
     </ThemeProvider>
   );

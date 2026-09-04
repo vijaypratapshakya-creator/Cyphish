@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import routes from './routes/index.js';
 import errorHandler from './middlewares/errorHandler.js';
+import sanitizeMiddleware from './middlewares/sanitizeMiddleware.js';
 import { getClientIP } from './utils/utils.js';
 import { getMongoUri } from './utils/dbUtils.js';
 import { getSystemSettings } from './services/systemSettingService.js';
@@ -41,16 +42,24 @@ const dbUri = getMongoUri();
 // Trust proxy headers for reverse proxy setups (Nginx, ALB, Caddy)
 app.set('trust proxy', process.env.TRUST_PROXY === 'false' ? false : 1);
 
-// Middlewares
-app.use(express.json({ limit: '256kb' }));
+// Middlewares & Security Hardening
+app.use(express.json({ limit: '512kb' }));
+app.use(express.urlencoded({ extended: true, limit: '512kb' }));
+app.use(sanitizeMiddleware); // NoSQL injection prevention & parameter sanitization
+
 app.use(cors({
     origin: process.env.NODE_ENV === 'development' ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : true,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
 app.use(helmet({
     contentSecurityPolicy: false, // Allows flexible intranet dashboard rendering and avatars
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // Allows static assets/icons
+    xContentTypeOptions: true,
+    xXssProtection: true,
+    hidePoweredBy: true,
 }));
 
 if (process.env.NODE_ENV === 'development') {

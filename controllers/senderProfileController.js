@@ -11,12 +11,30 @@ const safeProfile = (profile) => {
 // Live test SMTP Connection and TLS Handshake
 export const testConnection = async (req, res) => {
   try {
-    const { host, port, email, password, encryptionMode, minTlsVersion, customCaCertificate, ignoreTlsCertificateErrors, profileId } = req.body;
+    const {
+      host,
+      port,
+      email,
+      fromEmail,
+      replyTo,
+      authType,
+      authUsername,
+      password,
+      encryptionMode,
+      minTlsVersion,
+      customCaCertificate,
+      ignoreTlsCertificateErrors,
+      profileId,
+    } = req.body;
 
     let targetPassword = password;
     let targetHost = host;
     let targetPort = port;
     let targetEmail = email;
+    let targetFromEmail = fromEmail;
+    let targetReplyTo = replyTo;
+    let targetAuthType = authType || (password ? 'credentials' : 'anonymous');
+    let targetAuthUsername = authUsername || email;
     let targetCa = customCaCertificate;
 
     // If testing an existing profile with unchanged password
@@ -27,6 +45,10 @@ export const testConnection = async (req, res) => {
         if (!targetHost) targetHost = existing.host;
         if (!targetPort) targetPort = existing.port;
         if (!targetEmail) targetEmail = existing.email;
+        if (!targetFromEmail) targetFromEmail = existing.fromEmail;
+        if (!targetReplyTo) targetReplyTo = existing.replyTo;
+        if (!targetAuthType) targetAuthType = existing.authType;
+        if (!targetAuthUsername) targetAuthUsername = existing.authUsername;
         if (!targetCa) targetCa = existing.customCaCertificate;
       }
     }
@@ -36,9 +58,13 @@ export const testConnection = async (req, res) => {
     }
 
     const testPayload = {
-      host: targetHost,
+      host: targetHost.trim(),
       port: Number(targetPort),
-      email: targetEmail,
+      email: (targetEmail || targetFromEmail || '').trim(),
+      fromEmail: (targetFromEmail || targetEmail || '').trim(),
+      replyTo: (targetReplyTo || '').trim(),
+      authType: targetAuthType,
+      authUsername: (targetAuthUsername || '').trim(),
       password: targetPassword,
       encryptionMode: encryptionMode || 'starttls_strict',
       minTlsVersion: minTlsVersion || 'TLSv1.3',
@@ -53,7 +79,7 @@ export const testConnection = async (req, res) => {
       action: 'SMTP_CONNECTION_TEST',
       resourceType: 'SenderProfile',
       outcome: result.success ? 'success' : 'failure',
-      details: { host: targetHost, port: targetPort, success: result.success },
+      details: { host: targetHost, port: targetPort, authType: targetAuthType, success: result.success },
     });
 
     if (result.success) {
@@ -72,8 +98,12 @@ export const createSenderProfile = async (req, res) => {
     const {
       senderName,
       email,
+      fromEmail,
+      replyTo,
       host,
       port,
+      authType = 'anonymous',
+      authUsername,
       secure,
       encryptionMode,
       minTlsVersion,
@@ -92,17 +122,24 @@ export const createSenderProfile = async (req, res) => {
       await SenderProfile.updateMany({}, { isDefault: false });
     }
 
+    const effectiveFromEmail = (fromEmail || email || '').trim();
+    const effectiveAuthUsername = (authUsername || (authType === 'credentials' ? email : '') || '').trim();
+
     const senderProfile = new SenderProfile({
       senderName: senderName.trim(),
-      email: email?.trim(),
+      fromEmail: effectiveFromEmail,
+      replyTo: (replyTo || '').trim(),
+      email: effectiveFromEmail, // Synced for legacy compatibility
       host: host.trim(),
       port: Number(port),
+      authType: authType || (password ? 'credentials' : 'anonymous'),
+      authUsername: effectiveAuthUsername,
+      password: authType === 'credentials' ? (password || '') : '',
       secure: Boolean(secure),
       encryptionMode: encryptionMode || (secure ? 'smtps_direct' : 'starttls_strict'),
       minTlsVersion: minTlsVersion || 'TLSv1.3',
       customCaCertificate: customCaCertificate?.trim() || '',
       ignoreTlsCertificateErrors: Boolean(ignoreTlsCertificateErrors),
-      password: password || '',
       isDefault: Boolean(isDefault),
     });
 
@@ -113,7 +150,13 @@ export const createSenderProfile = async (req, res) => {
       action: 'SENDER_PROFILE_CREATED',
       resourceType: 'SenderProfile',
       resourceId: senderProfile._id,
-      details: { senderName: senderProfile.senderName, host: senderProfile.host, port: senderProfile.port },
+      details: {
+        senderName: senderProfile.senderName,
+        fromEmail: senderProfile.fromEmail,
+        host: senderProfile.host,
+        port: senderProfile.port,
+        authType: senderProfile.authType,
+      },
     });
 
     res.status(201).json({
@@ -159,8 +202,12 @@ export const updateSenderProfile = async (req, res) => {
     const {
       senderName,
       email,
+      fromEmail,
+      replyTo,
       host,
       port,
+      authType,
+      authUsername,
       secure,
       encryptionMode,
       minTlsVersion,
@@ -176,15 +223,29 @@ export const updateSenderProfile = async (req, res) => {
     }
 
     if (senderName) profile.senderName = senderName.trim();
-    if (email !== undefined) profile.email = email.trim();
+    if (fromEmail !== undefined) {
+      profile.fromEmail = fromEmail.trim();
+      profile.email = fromEmail.trim();
+    } else if (email !== undefined) {
+      profile.email = email.trim();
+      if (!profile.fromEmail) profile.fromEmail = email.trim();
+    }
+    if (replyTo !== undefined) profile.replyTo = replyTo.trim();
     if (host) profile.host = host.trim();
     if (port) profile.port = Number(port);
+    if (authType) profile.authType = authType;
+    if (authUsername !== undefined) profile.authUsername = authUsername.trim();
     if (secure !== undefined) profile.secure = Boolean(secure);
     if (encryptionMode) profile.encryptionMode = encryptionMode;
     if (minTlsVersion) profile.minTlsVersion = minTlsVersion;
     if (customCaCertificate !== undefined) profile.customCaCertificate = customCaCertificate.trim();
     if (ignoreTlsCertificateErrors !== undefined) profile.ignoreTlsCertificateErrors = Boolean(ignoreTlsCertificateErrors);
-    if (password && password !== '[UNCHANGED]') profile.password = password;
+    
+    if (profile.authType === 'anonymous') {
+      profile.password = '';
+    } else if (password && password !== '[UNCHANGED]') {
+      profile.password = password;
+    }
 
     if (isDefault) {
       await SenderProfile.updateMany({ _id: { $ne: id } }, { isDefault: false });
@@ -198,7 +259,12 @@ export const updateSenderProfile = async (req, res) => {
       action: 'SENDER_PROFILE_UPDATED',
       resourceType: 'SenderProfile',
       resourceId: profile._id,
-      details: { senderName: profile.senderName, host: profile.host },
+      details: {
+        senderName: profile.senderName,
+        fromEmail: profile.fromEmail,
+        host: profile.host,
+        authType: profile.authType,
+      },
     });
 
     res.status(200).json({

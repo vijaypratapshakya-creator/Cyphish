@@ -13,6 +13,9 @@ const UserSchema = new mongoose.Schema({
     default: 'campaign_manager' 
   },
   accountLocked: { type: Boolean, default: false },
+  failedLoginAttempts: { type: Number, default: 0 },
+  lockUntil: { type: Date, default: null },
+  lastFailedLoginAt: { type: Date },
   isRoot: { type: Boolean, default: false },
   lastLoginAt: { type: Date },
 }, { timestamps: true });

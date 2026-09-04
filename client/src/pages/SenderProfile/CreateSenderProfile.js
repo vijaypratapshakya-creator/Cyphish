@@ -30,9 +30,9 @@ import {
   PlayArrow as PlayArrowIcon,
   Security as SecurityIcon,
   Dns as DnsIcon,
+  VpnKey as VpnKeyIcon,
 } from '@mui/icons-material';
 import Sidebar from '../../components/Sidebar';
-import Footer from '../../components/Footer';
 import { useNavigate } from 'react-router-dom';
 import { useSenderProfiles } from '../../hooks/useSenderProfiles';
 
@@ -40,32 +40,51 @@ const CreateSenderProfile = () => {
   const navigate = useNavigate();
   const { createSenderProfile, testConnection, loading, error } = useSenderProfiles();
 
+  // Display / MIME Headers
   const [senderName, setSenderName] = useState('');
+  const [fromEmail, setFromEmail] = useState('');
+  const [replyTo, setReplyTo] = useState('');
+
+  // Transport & Server Specs
   const [host, setHost] = useState('');
-  const [port, setPort] = useState('587');
-  const [email, setEmail] = useState('');
+  const [port, setPort] = useState('25');
+
+  // Authentication Mode
+  const [authType, setAuthType] = useState('anonymous');
+  const [authUsername, setAuthUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Encryption & CA
   const [encryptionMode, setEncryptionMode] = useState('starttls_strict');
   const [minTlsVersion, setMinTlsVersion] = useState('TLSv1.3');
   const [customCaCertificate, setCustomCaCertificate] = useState('');
   const [ignoreTlsCertificateErrors, setIgnoreTlsCertificateErrors] = useState(false);
   const [isDefault, setIsDefault] = useState(false);
 
+  // Testing State
   const [testTesting, setTestTesting] = useState(false);
   const [testStatus, setTestStatus] = useState(null);
 
   const handleApplyPreset = (presetType) => {
-    if (presetType === 'exchange_587') {
+    if (presetType === 'exchange_anon_25') {
+      setPort('25');
+      setAuthType('anonymous');
+      setEncryptionMode('starttls_strict');
+      setMinTlsVersion('TLSv1.3');
+    } else if (presetType === 'exchange_587') {
       setPort('587');
+      setAuthType('credentials');
       setEncryptionMode('starttls_strict');
       setMinTlsVersion('TLSv1.3');
     } else if (presetType === 'smtps_465') {
       setPort('465');
+      setAuthType('credentials');
       setEncryptionMode('smtps_direct');
       setMinTlsVersion('TLSv1.3');
     } else if (presetType === 'postfix_25') {
       setPort('25');
+      setAuthType('anonymous');
       setEncryptionMode('starttls_opportunistic');
       setMinTlsVersion('TLSv1.2');
     }
@@ -94,8 +113,11 @@ const CreateSenderProfile = () => {
     const res = await testConnection({
       host: host.trim(),
       port: Number(port),
-      email: email.trim(),
-      password,
+      fromEmail: fromEmail.trim(),
+      replyTo: replyTo.trim(),
+      authType,
+      authUsername: authUsername.trim(),
+      password: authType === 'credentials' ? password : '',
       encryptionMode,
       minTlsVersion,
       customCaCertificate,
@@ -109,10 +131,14 @@ const CreateSenderProfile = () => {
     e.preventDefault();
     const payload = {
       senderName: senderName.trim(),
+      fromEmail: fromEmail.trim(),
+      replyTo: replyTo.trim(),
+      email: fromEmail.trim(), // Legacy compatibility
       host: host.trim(),
       port: Number(port),
-      email: email.trim(),
-      password,
+      authType,
+      authUsername: authType === 'credentials' ? authUsername.trim() : '',
+      password: authType === 'credentials' ? password : '',
       encryptionMode,
       minTlsVersion,
       customCaCertificate: customCaCertificate.trim(),
@@ -145,7 +171,7 @@ const CreateSenderProfile = () => {
                 Configure SMTP Relay Station
               </Typography>
               <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                Setup mail server connectivity with TLS 1.3 encryption and in-GUI Exchange Root CA trust injection.
+                Setup Exchange anonymous IP relays, authenticated mailboxes, TLS 1.3 encryption, and internal Root CA trust injection.
               </Typography>
             </Box>
           </Box>
@@ -178,7 +204,7 @@ const CreateSenderProfile = () => {
                 <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', mb: 3 }}>
                   <CardContent sx={{ p: 3 }}>
                     <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <DnsIcon sx={{ color: '#3b82f6' }} /> Relay Connection Details
+                      <DnsIcon sx={{ color: '#3b82f6' }} /> Relay Connection & Masked Identity
                     </Typography>
 
                     {/* Presets */}
@@ -186,34 +212,64 @@ const CreateSenderProfile = () => {
                       <Typography variant="caption" sx={{ color: '#64748b', alignSelf: 'center', mr: 1 }}>
                         Quick Presets:
                       </Typography>
+                      <Button size="small" variant="outlined" onClick={() => handleApplyPreset('exchange_anon_25')} sx={{ borderColor: 'rgba(16, 185, 129, 0.4)', color: '#34d399', fontSize: '0.75rem' }}>
+                        Exchange Anonymous (Port 25)
+                      </Button>
                       <Button size="small" variant="outlined" onClick={() => handleApplyPreset('exchange_587')} sx={{ borderColor: 'rgba(59, 130, 246, 0.4)', color: '#60a5fa', fontSize: '0.75rem' }}>
-                        Exchange / M365 (587)
+                        M365 / Auth (Port 587)
                       </Button>
                       <Button size="small" variant="outlined" onClick={() => handleApplyPreset('smtps_465')} sx={{ borderColor: 'rgba(59, 130, 246, 0.4)', color: '#60a5fa', fontSize: '0.75rem' }}>
-                        Direct SMTPS (465)
+                        Direct SMTPS (Port 465)
                       </Button>
-                      <Button size="small" variant="outlined" onClick={() => handleApplyPreset('postfix_25')} sx={{ borderColor: 'rgba(59, 130, 246, 0.4)', color: '#60a5fa', fontSize: '0.75rem' }}>
-                        Internal Postfix (25)
+                      <Button size="small" variant="outlined" onClick={() => handleApplyPreset('postfix_25')} sx={{ borderColor: 'rgba(148, 163, 184, 0.4)', color: '#94a3b8', fontSize: '0.75rem' }}>
+                        Postfix (Port 25)
                       </Button>
                     </Box>
 
                     <Grid container spacing={2}>
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Display Sender Name"
+                          placeholder="e.g. IT Security Desk"
+                          value={senderName}
+                          onChange={(e) => setSenderName(e.target.value)}
+                          helperText="Friendly name shown in recipient mailbox"
+                          required
+                        />
+                      </Grid>
+
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Display From Email"
+                          placeholder="security-alert@company.com"
+                          value={fromEmail}
+                          onChange={(e) => setFromEmail(e.target.value)}
+                          helperText="The simulated sender email address"
+                          required
+                        />
+                      </Grid>
+
                       <Grid item xs={12}>
                         <TextField
                           fullWidth
-                          label="Profile / Display Name"
-                          placeholder="e.g. Corporate Exchange Relay"
-                          value={senderName}
-                          onChange={(e) => setSenderName(e.target.value)}
-                          required
+                          label="Optional Reply-To Email"
+                          placeholder="phish-report@domain.com (Leave blank to match sender)"
+                          value={replyTo}
+                          onChange={(e) => setReplyTo(e.target.value)}
                         />
+                      </Grid>
+
+                      <Grid item xs={12}>
+                        <Divider sx={{ my: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
                       </Grid>
 
                       <Grid item xs={12} sm={8}>
                         <TextField
                           fullWidth
                           label="SMTP Host / IP Address"
-                          placeholder="e.g. mail.corp.internal or 10.0.1.25"
+                          placeholder="e.g. 192.168.1.50 or mail.corp.internal"
                           value={host}
                           onChange={(e) => setHost(e.target.value)}
                           required
@@ -225,40 +281,94 @@ const CreateSenderProfile = () => {
                           fullWidth
                           label="Port"
                           type="number"
-                          placeholder="587"
+                          placeholder="25"
                           value={port}
                           onChange={(e) => setPort(e.target.value)}
                           required
                         />
                       </Grid>
 
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          label="SMTP Username / Sender Email"
-                          placeholder="phish-drill@corp.internal"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                        />
-                      </Grid>
+                      {/* Authentication Mode Switcher */}
+                      <Grid item xs={12}>
+                        <Box sx={{ bgcolor: '#0b0f19', p: 2.5, borderRadius: '12px', border: '1px solid rgba(255, 255, 255, 0.08)', mt: 1 }}>
+                          <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <VpnKeyIcon sx={{ color: '#3b82f6', fontSize: '1.2rem' }} /> Relay Authentication Mode
+                          </Typography>
+                          
+                          <RadioGroup row value={authType} onChange={(e) => setAuthType(e.target.value)}>
+                            <FormControlLabel
+                              value="anonymous"
+                              control={<Radio size="small" />}
+                              label={
+                                <Box>
+                                  <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 600 }}>
+                                    Anonymous IP Whitelist (Recommended for Exchange)
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                                    No login credentials required. Mail server authorizes CyPhish server IP directly.
+                                  </Typography>
+                                </Box>
+                              }
+                            />
+                            <FormControlLabel
+                              value="credentials"
+                              control={<Radio size="small" />}
+                              label={
+                                <Box sx={{ mt: { xs: 1.5, sm: 0 } }}>
+                                  <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 600 }}>
+                                    SMTP Credentials (Username & Password)
+                                  </Typography>
+                                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                                    Requires authenticating to an active mailbox / service account.
+                                  </Typography>
+                                </Box>
+                              }
+                              sx={{ mt: 1 }}
+                            />
+                          </RadioGroup>
 
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          label="Password"
-                          type={showPassword ? 'text' : 'password'}
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          InputProps={{
-                            endAdornment: (
-                              <InputAdornment position="end">
-                                <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" sx={{ color: '#64748b' }}>
-                                  {showPassword ? <VisibilityOff /> : <Visibility />}
-                                </IconButton>
-                              </InputAdornment>
-                            ),
-                          }}
-                        />
+                          {authType === 'anonymous' ? (
+                            <Box sx={{ mt: 2, p: 1.5, bgcolor: 'rgba(16, 185, 129, 0.08)', borderRadius: '8px', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                              <Typography variant="caption" sx={{ color: '#34d399', display: 'block' }}>
+                                🛡️ <strong>Anonymous Relay Enabled:</strong> CyPhish will omit all SMTP AUTH handshakes. Ensure your Exchange Receive Connector whitelists this CyPhish server IP.
+                              </Typography>
+                            </Box>
+                          ) : (
+                            <Grid container spacing={2} sx={{ mt: 1 }}>
+                              <Grid item xs={12} sm={6}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  label="SMTP Auth Username"
+                                  placeholder="svc_relay@company.com"
+                                  value={authUsername}
+                                  onChange={(e) => setAuthUsername(e.target.value)}
+                                  required={authType === 'credentials'}
+                                />
+                              </Grid>
+                              <Grid item xs={12} sm={6}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  label="SMTP Password"
+                                  type={showPassword ? 'text' : 'password'}
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  required={authType === 'credentials'}
+                                  InputProps={{
+                                    endAdornment: (
+                                      <InputAdornment position="end">
+                                        <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" sx={{ color: '#64748b' }}>
+                                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                                        </IconButton>
+                                      </InputAdornment>
+                                    ),
+                                  }}
+                                />
+                              </Grid>
+                            </Grid>
+                          )}
+                        </Box>
                       </Grid>
 
                       <Grid item xs={12}>
@@ -285,10 +395,10 @@ const CreateSenderProfile = () => {
                         Encryption Handshake Mode
                       </FormLabel>
                       <RadioGroup value={encryptionMode} onChange={(e) => setEncryptionMode(e.target.value)}>
-                        <FormControlLabel value="starttls_strict" control={<Radio size="small" />} label={<Typography variant="body2" sx={{ color: '#f8fafc' }}>STARTTLS Strict (Mandatory TLS 1.3)</Typography>} />
+                        <FormControlLabel value="starttls_strict" control={<Radio size="small" />} label={<Typography variant="body2" sx={{ color: '#f8fafc' }}>STARTTLS Strict (Mandatory TLS 1.3/1.2)</Typography>} />
                         <FormControlLabel value="smtps_direct" control={<Radio size="small" />} label={<Typography variant="body2" sx={{ color: '#f8fafc' }}>Direct SMTPS (Implicit SSL/TLS - Port 465)</Typography>} />
                         <FormControlLabel value="starttls_opportunistic" control={<Radio size="small" />} label={<Typography variant="body2" sx={{ color: '#f8fafc' }}>Opportunistic STARTTLS (Fallback to plain)</Typography>} />
-                        <FormControlLabel value="none" control={<Radio size="small" />} label={<Typography variant="body2" sx={{ color: '#f8fafc' }}>Plaintext (No Encryption - Port 25)</Typography>} />
+                        <FormControlLabel value="none" control={<Radio size="small" />} label={<Typography variant="body2" sx={{ color: '#f8fafc' }}>Plaintext (No Encryption - Port 25 Internal)</Typography>} />
                       </RadioGroup>
                     </FormControl>
 
@@ -327,7 +437,7 @@ const CreateSenderProfile = () => {
                         </Button>
                       </Box>
                       <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1.5 }}>
-                        Upload or paste your internal Root CA certificate. Injected dynamically into Node's TLS trust store (zero container rebuilds).
+                        Upload internal Root CA certificate. Injected dynamically into Node's TLS trust store (zero container rebuilds).
                       </Typography>
                       <TextField
                         fullWidth
@@ -359,27 +469,29 @@ const CreateSenderProfile = () => {
                     variant="outlined"
                     startIcon={testTesting ? <CircularProgress size={16} sx={{ color: '#3b82f6' }} /> : <PlayArrowIcon />}
                     onClick={handleTestNow}
-                    disabled={testTesting}
+                    disabled={testTesting || loading}
                     sx={{
-                      borderColor: 'rgba(59, 130, 246, 0.5)',
+                      borderColor: 'rgba(59, 130, 246, 0.4)',
                       color: '#60a5fa',
                       fontWeight: 700,
+                      px: 3,
+                      py: 1.2,
                       borderRadius: '10px',
-                      '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.1)', borderColor: '#3b82f6' },
                     }}
                   >
-                    {testTesting ? 'Testing Socket...' : 'Test TLS Handshake'}
+                    {testTesting ? 'Validating Handshake...' : 'Live Test Relay'}
                   </Button>
 
                   <Button
                     type="submit"
                     variant="contained"
-                    disabled={loading}
+                    disabled={loading || testTesting}
                     sx={{
                       bgcolor: '#3b82f6',
                       color: '#fff',
                       fontWeight: 700,
-                      px: 3,
+                      px: 4,
+                      py: 1.2,
                       borderRadius: '10px',
                       '&:hover': { bgcolor: '#2563eb' },
                     }}
@@ -391,9 +503,7 @@ const CreateSenderProfile = () => {
 
             </Grid>
           </form>
-
         </Container>
-        <Footer />
       </Box>
     </Box>
   );

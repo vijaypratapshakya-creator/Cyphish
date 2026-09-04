@@ -7,6 +7,16 @@ const senderProfileSchema = new Schema({
         required: true,
         trim: true
     },
+    fromEmail: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    replyTo: {
+        type: String,
+        trim: true,
+        default: ''
+    },
     host: {
         type: String,
         required: true,
@@ -16,6 +26,17 @@ const senderProfileSchema = new Schema({
         type: Number,
         required: true
     },
+    authType: {
+        type: String,
+        enum: ['anonymous', 'credentials'],
+        default: 'anonymous',
+    },
+    authUsername: {
+        type: String,
+        trim: true,
+        default: '',
+    },
+    // Maintained for backward compatibility
     email: {
         type: String,
         trim: true,

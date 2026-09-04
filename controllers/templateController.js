@@ -4,6 +4,7 @@ import { __dirname } from '../utils/utils.js';
 import Template from '../models/Template.js';
 import { validateHTMLContent, validatePlaceholders, sanitizeCssSettings } from '../utils/templateUtils.js';
 import { convertMarkdownToHtml, applyCssSettings } from '../services/templateService.js';
+import { escapeRegex } from '../middlewares/sanitizeMiddleware.js';
 
 const SUPPORTED_PLACEHOLDER_FIELDS = [
     'firstName', 'lastName', 'email', 'phoneNumber', 'role', 'country', 'link', 'department', 'company'
@@ -160,10 +161,11 @@ export const getTemplateList = async (req, res) => {
 
         const query = {};
         if (search) {
+            const escaped = escapeRegex(search);
             query.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { subject: { $regex: search, $options: 'i' } },
-                { type: { $regex: search, $options: 'i' } },
+                { name: { $regex: escaped, $options: 'i' } },
+                { subject: { $regex: escaped, $options: 'i' } },
+                { type: { $regex: escaped, $options: 'i' } },
             ];
         }
 

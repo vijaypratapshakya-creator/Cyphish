@@ -8,13 +8,24 @@ import { getSystemSettings } from './systemSettingService.js';
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Creates a configured Nodemailer transport with TLS and Custom CA support
+ * Creates a configured Nodemailer transport with TLS, Custom CA, and Anonymous/Authenticated relay support
  */
 export const buildSmtpTransporter = (senderProfile) => {
-    const authConfig = senderProfile.email && senderProfile.password ? {
-        user: senderProfile.email,
-        pass: senderProfile.password,
-    } : undefined;
+    let authConfig = undefined;
+
+    // If authType is explicitly 'credentials' or if password is provided on legacy profile
+    const isAnonymous = senderProfile.authType === 'anonymous' || (!senderProfile.authType && !senderProfile.password);
+
+    if (!isAnonymous) {
+        const username = senderProfile.authUsername || senderProfile.email;
+        const password = senderProfile.password;
+        if (username && password) {
+            authConfig = {
+                user: username.trim(),
+                pass: password,
+            };
+        }
+    }
 
     const encryptionMode = senderProfile.encryptionMode || (senderProfile.secure ? 'smtps_direct' : 'starttls_strict');
 
@@ -50,7 +61,7 @@ export const verifySmtpConnection = async (senderProfile) => {
         const verifyResult = await transporter.verify();
         return {
             success: true,
-            message: `SMTP Connection & TLS handshake to ${senderProfile.host}:${senderProfile.port} succeeded.`,
+            message: `SMTP Connection & TLS handshake to ${senderProfile.host}:${senderProfile.port} succeeded (${senderProfile.authType === 'anonymous' ? 'Anonymous Relay' : 'Authenticated'}).`,
             details: verifyResult,
         };
     } catch (error) {
@@ -113,7 +124,8 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
         }
 
         const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-        const fromAddress = isValidEmail(senderProfile.email) ? senderProfile.email : "no-reply@mail.com";
+        const candidateFrom = senderProfile.fromEmail || senderProfile.email;
+        const fromAddress = isValidEmail(candidateFrom) ? candidateFrom : "no-reply@mail.com";
 
         const mailOptions = {
             from: `${senderProfile.senderName} <${fromAddress}>`,
@@ -125,6 +137,10 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
                 'X-Phish-Report-URL': reportLink,
             },
         };
+
+        if (senderProfile.replyTo && isValidEmail(senderProfile.replyTo.trim())) {
+            mailOptions.replyTo = senderProfile.replyTo.trim();
+        }
 
         // Send the email
         await transporter.sendMail(mailOptions);
@@ -144,15 +160,18 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
         if (timeDelay && timeDelay > 0) {
             await delay(timeDelay * 1000);
         }
-    } catch (error) {
-        console.error(`Error sending email to ${trackingEntry.email}:`, error.message);
 
-        // Record error on tracking entry
+    } catch (error) {
+        console.error(`Failed to send email to ${trackingEntry.email}:`, error.message);
+
+        // Update CampaignTracking on failure
         await CampaignTracking.findByIdAndUpdate(trackingEntry._id, {
+            status: 'failed',
             lastAttempt: new Date(),
             attemptCount: trackingEntry.attemptCount + 1,
             error: error.message,
         });
+
         throw error;
     }
 };

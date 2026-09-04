@@ -137,6 +137,22 @@ export async function updateSystemSettings(updateData, req = null) {
     if (updateData.scheduledReports.subject !== undefined) settings.scheduledReports.subject = updateData.scheduledReports.subject;
   }
 
+  if (updateData.security) {
+    if (!settings.security) settings.security = {};
+    if (updateData.security.sessionInactivityTimeoutMinutes !== undefined) {
+      settings.security.sessionInactivityTimeoutMinutes = Math.max(1, Math.min(1440, Number(updateData.security.sessionInactivityTimeoutMinutes) || 15));
+    }
+    if (updateData.security.maxFailedLoginAttempts !== undefined) {
+      settings.security.maxFailedLoginAttempts = Math.max(3, Math.min(20, Number(updateData.security.maxFailedLoginAttempts) || 5));
+    }
+    if (updateData.security.accountLockoutMinutes !== undefined) {
+      settings.security.accountLockoutMinutes = Math.max(1, Math.min(1440, Number(updateData.security.accountLockoutMinutes) || 15));
+    }
+    if (updateData.security.enableBruteForceProtection !== undefined) {
+      settings.security.enableBruteForceProtection = Boolean(updateData.security.enableBruteForceProtection);
+    }
+  }
+
   await settings.save();
   clearSettingsCache();
 
