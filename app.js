@@ -13,6 +13,7 @@ import { getMongoUri } from './utils/dbUtils.js';
 import { getSystemSettings } from './services/systemSettingService.js';
 import { startReportScheduler } from './services/reportScheduler.js';
 import { startCampaignScheduler } from './services/campaignScheduler.js';
+import { startDirectoryScheduler } from './services/directoryScheduler.js';
 
 dotenv.config();
 
@@ -103,6 +104,7 @@ mongoose.connect(dbUri)
             console.log(`CyPhish server started on Port ${port}`);
             startReportScheduler();
             startCampaignScheduler();
+            startDirectoryScheduler();
         });
     })
     .catch((err) => {

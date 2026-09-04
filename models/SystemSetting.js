@@ -127,6 +127,37 @@ const systemSettingSchema = new Schema({
       trim: true,
       default: '',
     },
+    periodicSync: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+      frequency: {
+        type: String,
+        enum: ['daily', 'weekly', '15_days', 'monthly', 'custom'],
+        default: 'weekly',
+      },
+      cron: {
+        type: String,
+        trim: true,
+        default: '0 2 * * 0',
+      },
+      lastSyncAt: {
+        type: Date,
+      },
+      lastSyncStatus: {
+        type: String,
+        default: 'never',
+      },
+      lastSyncCount: {
+        type: Number,
+        default: 0,
+      },
+      lastSyncError: {
+        type: String,
+        default: '',
+      },
+    },
   },
   scheduledReports: {
     enabled: {

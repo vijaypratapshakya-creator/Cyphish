@@ -75,3 +75,8 @@ export async function deleteUser(id) {
   const response = await axiosInstance.delete(`/api/users/${id}`);
   return response.data;
 }
+
+export async function triggerDirectorySyncNow() {
+  const response = await axiosInstance.post('/api/directory/sync-now');
+  return response.data;
+}

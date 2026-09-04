@@ -1,4 +1,5 @@
 import { findDirectoryUsers, ldapEnabled, testLdapConnection } from '../services/ldapService.js';
+import { executeDirectorySync } from '../services/ldapSyncService.js';
 import { audit } from '../services/auditService.js';
 
 export async function directoryStatus(_req, res) {
@@ -39,6 +40,15 @@ export async function testConnection(req, res) {
       outcome: 'failure',
       details: { error: error.message },
     });
+    res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function syncDirectoryNow(req, res) {
+  try {
+    const result = await executeDirectorySync(req);
+    res.json(result);
+  } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
 }

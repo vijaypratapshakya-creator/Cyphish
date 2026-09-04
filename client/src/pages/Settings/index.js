@@ -42,6 +42,10 @@ import {
   Delete as DeleteIcon,
   PlayArrow as PlayArrowIcon,
   Add as AddIcon,
+  Sync as SyncIcon,
+  Search as SearchIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
 } from '@mui/icons-material';
 
 import Sidebar from '../../components/Sidebar';
@@ -58,6 +62,8 @@ import {
   createUser,
   toggleLockUser,
   deleteUser,
+  triggerDirectorySyncNow,
+  searchDirectoryUsers,
 } from '../../services/systemService';
 
 const Settings = () => {
@@ -106,6 +112,15 @@ const Settings = () => {
     baseDN: 'DC=example,DC=internal',
     timeout: 10000,
     userFilter: '',
+    periodicSync: {
+      enabled: false,
+      frequency: 'weekly',
+      cron: '0 2 * * 0',
+      lastSyncAt: null,
+      lastSyncStatus: 'never_run',
+      lastSyncCount: 0,
+      lastSyncError: null,
+    },
   });
 
   const [scheduledReports, setScheduledReports] = useState({
@@ -137,14 +152,21 @@ const Settings = () => {
   });
   const [userCreating, setUserCreating] = useState(false);
 
+  // Active Directory Search & Import State for User Modal
+  const [adSearchQuery, setAdSearchQuery] = useState('');
+  const [adSearching, setAdSearching] = useState(false);
+  const [adSearchResults, setAdSearchResults] = useState([]);
+  const [adSearchError, setAdSearchError] = useState(null);
+
   // SIEM & Retention Test State
   const [testingSiem, setTestingSiem] = useState(false);
   const [siemTestResult, setSiemTestResult] = useState(null);
   const [purgingRetention, setPurgingRetention] = useState(false);
 
-  // LDAP Testing State
+  // LDAP Testing & Sync Now State
   const [testingLdap, setTestingLdap] = useState(false);
   const [ldapTestResult, setLdapTestResult] = useState(null);
+  const [syncingLdapNow, setSyncingLdapNow] = useState(false);
 
   // Auxiliary data
   const [senderProfiles, setSenderProfiles] = useState([]);
@@ -209,6 +231,15 @@ const Settings = () => {
             baseDN: d.ldap.baseDN || 'DC=example,DC=internal',
             timeout: d.ldap.timeout || 10000,
             userFilter: d.ldap.userFilter || '',
+            periodicSync: {
+              enabled: d.ldap.periodicSync?.enabled ?? false,
+              frequency: d.ldap.periodicSync?.frequency || 'weekly',
+              cron: d.ldap.periodicSync?.cron || '0 2 * * 0',
+              lastSyncAt: d.ldap.periodicSync?.lastSyncAt || null,
+              lastSyncStatus: d.ldap.periodicSync?.lastSyncStatus || 'never_run',
+              lastSyncCount: d.ldap.periodicSync?.lastSyncCount || 0,
+              lastSyncError: d.ldap.periodicSync?.lastSyncError || null,
+            },
           });
         }
         if (d.scheduledReports) {
@@ -359,6 +390,59 @@ const Settings = () => {
     } finally {
       setTestingLdap(false);
     }
+  };
+
+  const handleSyncNow = async () => {
+    setSyncingLdapNow(true);
+    try {
+      const res = await triggerDirectorySyncNow();
+      if (res.success) {
+        setAlert({
+          severity: 'success',
+          message: `Active Directory synchronization completed successfully! Synced ${res.data?.syncedCount ?? 0} user records.`,
+        });
+        loadSettings();
+      }
+    } catch (err) {
+      setAlert({
+        severity: 'error',
+        message: `AD Sync failed: ${err.response?.data?.message || err.message}`,
+      });
+    } finally {
+      setSyncingLdapNow(false);
+    }
+  };
+
+  const handleSearchAdUsers = async () => {
+    if (!adSearchQuery.trim()) return;
+    setAdSearching(true);
+    setAdSearchError(null);
+    setAdSearchResults([]);
+    try {
+      const res = await searchDirectoryUsers({ query: adSearchQuery.trim() });
+      if (res.success) {
+        setAdSearchResults(res.data || []);
+        if (!res.data || res.data.length === 0) {
+          setAdSearchError('No matching Active Directory users found for query.');
+        }
+      }
+    } catch (err) {
+      setAdSearchError(err.response?.data?.message || err.message || 'Failed to query Active Directory');
+    } finally {
+      setAdSearching(false);
+    }
+  };
+
+  const handleSelectAdUser = (user) => {
+    setNewUserData((prev) => ({
+      ...prev,
+      firstName: user.firstName || '',
+      lastName: user.lastName || '',
+      username: user.username || user.sAMAccountName || '',
+      email: user.email || user.mail || '',
+    }));
+    setAdSearchResults([]);
+    setAdSearchQuery('');
   };
 
   const handleCreateUserSubmit = async (e) => {
@@ -990,7 +1074,7 @@ const Settings = () => {
                     Active Directory & LDAP Directory Synchronization
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
-                    Connect to corporate Active Directory to automatically synchronize usernames, emails, departments, OUs, and security groups.
+                    Connect to corporate Active Directory (LDAPS) to automatically discover and synchronize domain users, emails, departments, OUs, and security groups.
                   </Typography>
 
                   <Grid container spacing={3}>
@@ -1009,6 +1093,7 @@ const Settings = () => {
                         value={ldap.url}
                         onChange={(e) => setLdap({ ...ldap, url: e.target.value })}
                         disabled={!ldap.enabled}
+                        helperText="LDAPS over TLS on port 636 is strongly recommended"
                       />
                     </Grid>
 
@@ -1018,7 +1103,7 @@ const Settings = () => {
                         type="number"
                         label="Timeout (ms)"
                         value={ldap.timeout}
-                        onChange={(e) => setLdap({ ...ldap, timeout: e.target.value })}
+                        onChange={(e) => setLdap({ ...ldap, timeout: Number(e.target.value) || 10000 })}
                         disabled={!ldap.enabled}
                       />
                     </Grid>
@@ -1046,7 +1131,7 @@ const Settings = () => {
                       />
                     </Grid>
 
-                    <Grid item xs={12}>
+                    <Grid item xs={12} sm={8}>
                       <TextField
                         fullWidth
                         label="Base DN"
@@ -1057,16 +1142,30 @@ const Settings = () => {
                       />
                     </Grid>
 
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        fullWidth
+                        label="User Search Filter (Optional)"
+                        placeholder="(&(objectClass=user)(mail=*))"
+                        value={ldap.userFilter}
+                        onChange={(e) => setLdap({ ...ldap, userFilter: e.target.value })}
+                        disabled={!ldap.enabled}
+                        helperText="Defaults to standard active user filter"
+                      />
+                    </Grid>
+
                     <Grid item xs={12}>
-                      <Button
-                        variant="outlined"
-                        startIcon={testingLdap ? <CircularProgress size={16} sx={{ color: '#3b82f6' }} /> : <PlayArrowIcon />}
-                        onClick={handleTestLdap}
-                        disabled={testingLdap || !ldap.enabled}
-                        sx={{ borderColor: 'rgba(59, 130, 246, 0.5)', color: '#60a5fa', fontWeight: 700 }}
-                      >
-                        {testingLdap ? 'Testing LDAP Socket...' : 'Test Active Directory Connection'}
-                      </Button>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Button
+                          variant="outlined"
+                          startIcon={testingLdap ? <CircularProgress size={16} sx={{ color: '#3b82f6' }} /> : <PlayArrowIcon />}
+                          onClick={handleTestLdap}
+                          disabled={testingLdap || !ldap.enabled}
+                          sx={{ borderColor: 'rgba(59, 130, 246, 0.5)', color: '#60a5fa', fontWeight: 700 }}
+                        >
+                          {testingLdap ? 'Testing LDAP Socket...' : 'Test Active Directory Connection'}
+                        </Button>
+                      </Box>
 
                       {ldapTestResult && (
                         <Alert
@@ -1082,6 +1181,170 @@ const Settings = () => {
                         </Alert>
                       )}
                     </Grid>
+
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 2, borderColor: 'rgba(255,255,255,0.08)' }} />
+                    </Grid>
+
+                    {/* Automated Periodic Synchronization Scheduler */}
+                    <Grid item xs={12}>
+                      <Box sx={{ bgcolor: '#0b0f19', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', p: 3 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+                          <Box>
+                            <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <SyncIcon sx={{ color: '#3b82f6' }} />
+                              Automated Periodic Background Directory Sync
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                              Periodically queries Active Directory to automatically add new employees and update user attributes into CyPhish target lists.
+                            </Typography>
+                          </Box>
+
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            startIcon={syncingLdapNow ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <SyncIcon />}
+                            onClick={handleSyncNow}
+                            disabled={syncingLdapNow || !ldap.enabled}
+                            sx={{
+                              bgcolor: '#3b82f6',
+                              color: '#fff',
+                              fontWeight: 700,
+                              borderRadius: '8px',
+                              px: 2.5,
+                              '&:hover': { bgcolor: '#2563eb' },
+                            }}
+                          >
+                            {syncingLdapNow ? 'Synchronizing Directory...' : 'Sync Directory Now'}
+                          </Button>
+                        </Box>
+
+                        <Grid container spacing={3} sx={{ mt: 0.5 }}>
+                          <Grid item xs={12}>
+                            <FormControlLabel
+                              control={
+                                <Switch
+                                  checked={ldap.periodicSync?.enabled ?? false}
+                                  onChange={(e) =>
+                                    setLdap({
+                                      ...ldap,
+                                      periodicSync: { ...ldap.periodicSync, enabled: e.target.checked },
+                                    })
+                                  }
+                                  color="primary"
+                                  disabled={!ldap.enabled}
+                                />
+                              }
+                              label={
+                                <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 600 }}>
+                                  Enable Automated Periodic Background Sync
+                                </Typography>
+                              }
+                            />
+                          </Grid>
+
+                          <Grid item xs={12} sm={6}>
+                            <FormControl fullWidth disabled={!ldap.enabled || !ldap.periodicSync?.enabled}>
+                              <InputLabel sx={{ color: '#94a3b8' }}>Sync Frequency</InputLabel>
+                              <Select
+                                value={ldap.periodicSync?.frequency || 'weekly'}
+                                label="Sync Frequency"
+                                onChange={(e) =>
+                                  setLdap({
+                                    ...ldap,
+                                    periodicSync: { ...ldap.periodicSync, frequency: e.target.value },
+                                  })
+                                }
+                                sx={{ bgcolor: '#111827' }}
+                              >
+                                <MenuItem value="daily">Daily Sync (Everyday at 02:00 AM)</MenuItem>
+                                <MenuItem value="weekly">Weekly Sync (Every Sunday at 02:00 AM)</MenuItem>
+                                <MenuItem value="15_days">15 Days Sync (1st & 15th of the month at 02:00 AM)</MenuItem>
+                                <MenuItem value="monthly">Monthly Sync (1st of the month at 02:00 AM)</MenuItem>
+                                <MenuItem value="custom">Custom Cron Expression</MenuItem>
+                              </Select>
+                            </FormControl>
+                          </Grid>
+
+                          {ldap.periodicSync?.frequency === 'custom' && (
+                            <Grid item xs={12} sm={6}>
+                              <TextField
+                                fullWidth
+                                label="Custom Cron Schedule"
+                                placeholder="0 2 * * 0"
+                                value={ldap.periodicSync?.cron || ''}
+                                onChange={(e) =>
+                                  setLdap({
+                                    ...ldap,
+                                    periodicSync: { ...ldap.periodicSync, cron: e.target.value },
+                                  })
+                                }
+                                disabled={!ldap.enabled || !ldap.periodicSync?.enabled}
+                                helperText="Standard 5-part cron syntax (minute hour day month weekday)"
+                              />
+                            </Grid>
+                          )}
+
+                          {/* Directory Sync Status Telemetry */}
+                          <Grid item xs={12}>
+                            <Box
+                              sx={{
+                                bgcolor: '#111827',
+                                p: 2,
+                                borderRadius: '8px',
+                                border: '1px solid rgba(255,255,255,0.06)',
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: 3,
+                                alignItems: 'center',
+                              }}
+                            >
+                              <Box>
+                                <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                                  LAST SYNC STATUS
+                                </Typography>
+                                <Box sx={{ mt: 0.5 }}>
+                                  {ldap.periodicSync?.lastSyncStatus === 'success' ? (
+                                    <Chip size="small" icon={<CheckCircleIcon sx={{ fontSize: '1rem !important' }} />} label="Success" sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }} />
+                                  ) : ldap.periodicSync?.lastSyncStatus === 'failed' ? (
+                                    <Chip size="small" icon={<ErrorIcon sx={{ fontSize: '1rem !important' }} />} label="Failed" sx={{ bgcolor: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 700 }} />
+                                  ) : (
+                                    <Chip size="small" label="Never Synced" sx={{ bgcolor: 'rgba(148, 163, 184, 0.2)', color: '#94a3b8', fontWeight: 600 }} />
+                                  )}
+                                </Box>
+                              </Box>
+
+                              <Box>
+                                <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                                  LAST SYNCHRONIZED AT
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 600, mt: 0.5 }}>
+                                  {ldap.periodicSync?.lastSyncAt ? new Date(ldap.periodicSync.lastSyncAt).toLocaleString() : 'N/A'}
+                                </Typography>
+                              </Box>
+
+                              <Box>
+                                <Typography variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                                  LAST SYNC RECORD COUNT
+                                </Typography>
+                                <Typography variant="body2" sx={{ color: '#60a5fa', fontWeight: 700, mt: 0.5 }}>
+                                  {ldap.periodicSync?.lastSyncCount ? `${ldap.periodicSync.lastSyncCount} Contacts Synced` : '0 Contacts'}
+                                </Typography>
+                              </Box>
+
+                              {ldap.periodicSync?.lastSyncError && (
+                                <Box sx={{ width: '100%', mt: 1 }}>
+                                  <Alert severity="error" sx={{ bgcolor: 'rgba(239, 68, 68, 0.1)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                                    Sync Error: {ldap.periodicSync.lastSyncError}
+                                  </Alert>
+                                </Box>
+                              )}
+                            </Box>
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    </Grid>
+
                   </Grid>
                 </Box>
               )}
@@ -1208,23 +1471,113 @@ const Settings = () => {
           {/* Add Platform User Modal */}
           <Dialog
             open={userModalOpen}
-            onClose={() => !userCreating && setUserModalOpen(false)}
+            onClose={() => {
+              if (!userCreating) {
+                setUserModalOpen(false);
+                setAdSearchResults([]);
+                setAdSearchQuery('');
+                setAdSearchError(null);
+              }
+            }}
             PaperProps={{
               sx: {
                 bgcolor: '#111827',
                 border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '16px',
                 p: 1,
-                minWidth: { xs: '90%', sm: 520 },
+                minWidth: { xs: '90%', sm: 580 },
               },
             }}
           >
             <form onSubmit={handleCreateUserSubmit}>
-              <DialogTitle sx={{ color: '#f8fafc', fontWeight: 700 }}>
+              <DialogTitle sx={{ color: '#f8fafc', fontWeight: 700, pb: 1 }}>
                 Provision Delegated Administrator / Engineer
               </DialogTitle>
               <DialogContent>
-                <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                {/* Active Directory Quick Pull / Search Section */}
+                <Box
+                  sx={{
+                    bgcolor: '#0b0f19',
+                    p: 2,
+                    borderRadius: '10px',
+                    border: '1px solid rgba(59, 130, 246, 0.3)',
+                    mb: 2.5,
+                    mt: 0.5,
+                  }}
+                >
+                  <Typography variant="caption" sx={{ color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+                    <SearchIcon sx={{ fontSize: '1rem' }} />
+                    Option A: Pull / Import Profile from Active Directory
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      placeholder="Search by name or sAMAccountName (e.g. jdoe, John)..."
+                      value={adSearchQuery}
+                      onChange={(e) => setAdSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleSearchAdUsers();
+                        }
+                      }}
+                      sx={{ bgcolor: '#111827' }}
+                    />
+                    <Button
+                      variant="outlined"
+                      onClick={handleSearchAdUsers}
+                      disabled={adSearching || !adSearchQuery.trim()}
+                      startIcon={adSearching ? <CircularProgress size={14} sx={{ color: '#3b82f6' }} /> : <SearchIcon />}
+                      sx={{ borderColor: '#3b82f6', color: '#60a5fa', fontWeight: 600, px: 2, whiteSpace: 'nowrap' }}
+                    >
+                      {adSearching ? 'Searching...' : 'Search AD'}
+                    </Button>
+                  </Box>
+
+                  {adSearchError && (
+                    <Typography variant="caption" sx={{ color: '#f87171', display: 'block', mt: 1 }}>
+                      {adSearchError}
+                    </Typography>
+                  )}
+
+                  {adSearchResults.length > 0 && (
+                    <Box sx={{ mt: 1.5, maxHeight: 150, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '6px' }}>
+                      {adSearchResults.map((u, i) => (
+                        <Box
+                          key={i}
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            p: 1,
+                            borderBottom: i !== adSearchResults.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                            '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.08)' },
+                          }}
+                        >
+                          <Box>
+                            <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 600 }}>
+                              {u.firstName} {u.lastName} <Typography component="span" variant="caption" sx={{ color: '#60a5fa', fontFamily: 'monospace' }}>({u.username || u.sAMAccountName})</Typography>
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                              {u.email} {u.department ? `• Dept: ${u.department}` : ''}
+                            </Typography>
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            onClick={() => handleSelectAdUser(u)}
+                            sx={{ bgcolor: '#3b82f6', color: '#fff', fontSize: '0.72rem', py: 0.3, px: 1.2, fontWeight: 700 }}
+                          >
+                            Autofill Details
+                          </Button>
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
+
+                <Grid container spacing={2}>
                   <Grid item xs={12} sm={6}>
                     <TextField
                       fullWidth
@@ -1290,7 +1643,16 @@ const Settings = () => {
                 </Grid>
               </DialogContent>
               <DialogActions sx={{ px: 3, pb: 2 }}>
-                <Button onClick={() => setUserModalOpen(false)} disabled={userCreating} sx={{ color: '#94a3b8' }}>
+                <Button
+                  onClick={() => {
+                    setUserModalOpen(false);
+                    setAdSearchResults([]);
+                    setAdSearchQuery('');
+                    setAdSearchError(null);
+                  }}
+                  disabled={userCreating}
+                  sx={{ color: '#94a3b8' }}
+                >
                   Cancel
                 </Button>
                 <Button

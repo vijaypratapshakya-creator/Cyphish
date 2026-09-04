@@ -120,6 +120,13 @@ export async function updateSystemSettings(updateData, req = null) {
     if (updateData.ldap.baseDN !== undefined) settings.ldap.baseDN = updateData.ldap.baseDN;
     if (updateData.ldap.timeout !== undefined) settings.ldap.timeout = updateData.ldap.timeout;
     if (updateData.ldap.userFilter !== undefined) settings.ldap.userFilter = updateData.ldap.userFilter;
+
+    if (updateData.ldap.periodicSync) {
+      if (!settings.ldap.periodicSync) settings.ldap.periodicSync = {};
+      if (updateData.ldap.periodicSync.enabled !== undefined) settings.ldap.periodicSync.enabled = Boolean(updateData.ldap.periodicSync.enabled);
+      if (updateData.ldap.periodicSync.frequency !== undefined) settings.ldap.periodicSync.frequency = updateData.ldap.periodicSync.frequency;
+      if (updateData.ldap.periodicSync.cron !== undefined) settings.ldap.periodicSync.cron = updateData.ldap.periodicSync.cron.trim();
+    }
   }
 
   if (updateData.scheduledReports) {
@@ -161,6 +168,13 @@ export async function updateSystemSettings(updateData, req = null) {
     await reloadReportScheduler();
   } catch (err) {
     console.warn('Report scheduler reload warning:', err.message);
+  }
+
+  try {
+    const { reloadDirectoryScheduler } = await import('./directoryScheduler.js');
+    await reloadDirectoryScheduler();
+  } catch (err) {
+    console.warn('Directory scheduler reload warning:', err.message);
   }
 
   await audit({
