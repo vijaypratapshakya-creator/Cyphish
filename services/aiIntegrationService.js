@@ -30,8 +30,9 @@ export async function testConnection({ provider, model, apiKey, baseUrl }) {
       const models = Array.isArray(data?.models) ? data.models : [];
       const modelNames = models.map((m) => (m.name || m.model || '').toLowerCase());
       const requestedModel = (model || '').trim().toLowerCase();
-      if (requestedModel && !modelNames.some((n) => n.includes(requestedModel) || requestedModel.includes(n))) {
-        throw new Error(`Model "${model}" was not found on the Ollama server. Available: ${modelNames.length ? modelNames.slice(0, 5).join(', ') : 'none'}.`);
+      const baseRequested = requestedModel.split(':')[0];
+      if (requestedModel && !modelNames.some((n) => n.includes(requestedModel) || requestedModel.includes(n) || n.includes(baseRequested))) {
+        throw new Error(`Model "${model}" was not found on the Ollama server. Available models: ${modelNames.length ? modelNames.slice(0, 6).join(', ') : 'none'}. You can install it with: ollama pull ${model}`);
       }
       return;
     }
@@ -105,13 +106,77 @@ export async function getModelsConfig() {
   } catch (err) {
     if (err.code === 'ENOENT') {
       return {
-        version: 1,
-        updated: null,
+        version: 3,
+        updated: '2026-09-04',
         providers: {
-          ollama: { defaultModelId: 'llama3.2', models: [{ id: 'llama3.2', name: 'Llama 3.2 (local)' }] },
-          openai: { defaultModelId: 'gpt-4o-mini', models: [{ id: 'gpt-4o-mini', name: 'GPT-4o mini' }] },
-          gemini: { defaultModelId: 'gemini-1.5-flash', models: [{ id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' }] },
-          claude: { defaultModelId: 'claude-3-5-sonnet-20241022', models: [{ id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' }] },
+          gemini: {
+            defaultModelId: 'gemini-2.0-flash',
+            models: [
+              { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash ⚡ [Hybrid Reasoning & Speed / Generous Free Tier]', tier: 'latest_free' },
+              { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite ⚡ [Ultra-Low Latency / Generous Free Tier]', tier: 'latest_free' },
+              { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro [Frontier Multimodal & Deep Analysis]', tier: 'frontier' },
+              { id: 'gemini-2.0-pro-exp-02-05', name: 'Gemini 2.0 Pro (Extended Thinking) ⚡ [Experimental / Free Tier]', tier: 'reasoning_free' },
+              { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash ⚡ [High Speed Generation / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro [Complex Analysis & Reasoning]', tier: 'standard' },
+              { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash ⚡ [Default / 15 RPM Free Tier / Multimodal]', tier: 'free_tier' },
+              { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite ⚡ [Fast Lightweight / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash ⚡ [15 RPM Free Tier Available]', tier: 'free_tier' },
+              { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro ⚡ [2M Context Window / Free Tier Available]', tier: 'free_tier' },
+            ],
+          },
+          claude: {
+            defaultModelId: 'claude-3-7-sonnet-20250219',
+            models: [
+              { id: 'claude-fable-5-1', name: 'Claude Fable 5.1 [Frontier Creative & Adaptive Threat Engine]', tier: 'frontier' },
+              { id: 'claude-opus-5', name: 'Claude Opus 5 [Extreme Nuance & Autonomous Phish Modeling]', tier: 'frontier' },
+              { id: 'claude-sonnet-5', name: 'Claude Sonnet 5 [Next-Gen Flagship Benchmark & Speed]', tier: 'frontier' },
+              { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5 ⚡ [Ultra Fast & Cost-Effective]', tier: 'budget' },
+              { id: 'claude-fable-5', name: 'Claude Fable 5 [Advanced Threat Narrative Synthesis]', tier: 'advanced' },
+              { id: 'claude-opus-4-8', name: 'Claude Opus 4.8 [High Reasoning Benchmark]', tier: 'advanced' },
+              { id: 'claude-opus-4-7', name: 'Claude Opus 4.7 [Deep Logic & Nuanced Email Simulation]', tier: 'advanced' },
+              { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 [Extended Analytical Depth]', tier: 'advanced' },
+              { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 [Balanced Speed & Reasoning]', tier: 'advanced' },
+              { id: 'claude-opus-3', name: 'Claude Opus 3 [Complex Analysis Benchmark]', tier: 'standard' },
+              { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet [Hybrid Reasoning & Code / Industry Benchmark]', tier: 'standard' },
+              { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet [Industry Standard Benchmark]', tier: 'standard' },
+              { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku ⚡ [Fast & Cost Effective]', tier: 'budget' },
+              { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus [Deep Analysis & Research]', tier: 'standard' },
+            ],
+          },
+          openai: {
+            defaultModelId: 'gpt-4o-mini',
+            models: [
+              { id: 'gpt-5.2', name: 'GPT-5.2 [Frontier Intelligence & Phishing Realism]', tier: 'frontier' },
+              { id: 'gpt-5', name: 'GPT-5 [Flagship Autonomous Reasoning & Multimodal]', tier: 'frontier' },
+              { id: 'gpt-5-mini', name: 'GPT-5 mini ⚡ [High Efficiency / Low Latency]', tier: 'budget' },
+              { id: 'gpt-4.1', name: 'GPT-4.1 [Precision Reasoning & Threat Engineering]', tier: 'advanced' },
+              { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini ⚡ [Lightweight & High Speed]', tier: 'budget' },
+              { id: 'o3', name: 'o3 [Frontier High-Compute STEM & Logic Reasoning]', tier: 'reasoning' },
+              { id: 'o3-mini', name: 'o3-mini [Latest Advanced STEM / Fast Reasoning]', tier: 'reasoning' },
+              { id: 'o1', name: 'o1 [Complex Logic & Social Engineering Analysis]', tier: 'reasoning' },
+              { id: 'o1-mini', name: 'o1-mini [Fast Reasoning]', tier: 'reasoning' },
+              { id: 'gpt-4o', name: 'GPT-4o [Flagship Multimodal Intelligence]', tier: 'standard' },
+              { id: 'gpt-4o-mini', name: 'GPT-4o mini ⚡ [Cost-Effective / Free Trial Grants / Fast]', tier: 'budget' },
+              { id: 'gpt-4-turbo', name: 'GPT-4 Turbo [Reliable Production Workhorse]', tier: 'legacy' },
+            ],
+          },
+          ollama: {
+            defaultModelId: 'llama3.2',
+            models: [
+              { id: 'llama3.2', name: 'Llama 3.2 (3B) ⚡ [100% Free / Local / Fast Default]', tier: 'free_local' },
+              { id: 'llama3.2:1b', name: 'Llama 3.2 (1B Lightweight) ⚡ [100% Free / Local / Instant]', tier: 'free_local' },
+              { id: 'llama3.3:70b', name: 'Llama 3.3 (70B Flagship) ⚡ [100% Free / Local / Enterprise Quality]', tier: 'free_local' },
+              { id: 'llama3.1:8b', name: 'Llama 3.1 (8B Standard) ⚡ [100% Free / Local / Balanced]', tier: 'free_local' },
+              { id: 'deepseek-r1:8b', name: 'DeepSeek R1 (8B Reasoning) ⚡ [100% Free / Local / Deep Chain-of-Thought]', tier: 'free_local' },
+              { id: 'deepseek-r1:14b', name: 'DeepSeek R1 (14B Reasoning) ⚡ [100% Free / Local / High Accuracy]', tier: 'free_local' },
+              { id: 'deepseek-r1:32b', name: 'DeepSeek R1 (32B Advanced) ⚡ [100% Free / Local / Elite Reasoning]', tier: 'free_local' },
+              { id: 'qwen2.5:7b', name: 'Qwen 2.5 (7B Structured JSON) ⚡ [100% Free / Local / High JSON Quality]', tier: 'free_local' },
+              { id: 'qwen2.5:14b', name: 'Qwen 2.5 (14B Structured JSON) ⚡ [100% Free / Local / Complex Structure]', tier: 'free_local' },
+              { id: 'mistral:7b', name: 'Mistral 7B ⚡ [100% Free / Local / Reliable]', tier: 'free_local' },
+              { id: 'gemma2:9b', name: 'Google Gemma 2 (9B) ⚡ [100% Free / Local / High Quality Text]', tier: 'free_local' },
+              { id: 'phi3.5:3.8b', name: 'Microsoft Phi 3.5 ⚡ [100% Free / Local / Compact]', tier: 'free_local' },
+            ],
+          },
         },
       };
     }
@@ -212,12 +277,10 @@ function extractAndParseJSON(rawText) {
   }
 
   let cleaned = rawText.trim();
-  // Remove markdown code fences if present (```json ... ``` or ``` ...)
   if (cleaned.startsWith('```')) {
     cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   }
 
-  // Find first '{' and last '}'
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -273,13 +336,15 @@ export async function generateThreatScenario({
   scenarioPrompt = '',
   companyName = 'Acme Corporation',
   tone = 'Authoritative & Urgent',
+  selectedModel = '',
 }) {
   const activeIntegration = await getActiveIntegrationWithKey();
   if (!activeIntegration || !activeIntegration.isActive) {
     throw new Error('No active AI provider configured. Please configure OpenAI, Gemini, Claude, or Ollama in Account Settings.');
   }
 
-  const { provider, model, apiKey, baseUrl } = activeIntegration;
+  const { provider, apiKey, baseUrl } = activeIntegration;
+  const model = (selectedModel && String(selectedModel).trim()) ? String(selectedModel).trim() : activeIntegration.model;
   const systemPrompt = buildCybersecuritySystemPrompt();
 
   const userPrompt = `Generate a realistic security awareness phishing simulation scenario with the following parameters:
@@ -355,7 +420,7 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
     // 3. Google Gemini Provider
     else if (provider === 'gemini') {
       const key = apiKey && String(apiKey).trim();
-      const targetModel = model || 'gemini-1.5-flash';
+      const targetModel = model || 'gemini-2.0-flash';
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(key)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -386,6 +451,7 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
     // 4. Anthropic Claude Provider
     else if (provider === 'claude') {
       const key = apiKey && String(apiKey).trim();
+      const targetModel = model || 'claude-3-5-sonnet-20241022';
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -395,7 +461,7 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
         },
         signal: controller.signal,
         body: JSON.stringify({
-          model: model || 'claude-3-5-sonnet-20241022',
+          model: targetModel,
           max_tokens: 4096,
           system: systemPrompt,
           messages: [
@@ -418,7 +484,6 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
     // Sanitize & guarantee essential fields
     let htmlContent = parsed.htmlContent || '<p>Click <a href="{{link}}">here</a> to verify.</p>';
     if (!htmlContent.includes('{{link}}') && !htmlContent.includes('{{ link }}')) {
-      // Append a fallback link if the model omitted it
       htmlContent += `<p style="margin-top:20px;text-align:center;"><a href="{{link}}" style="background-color:#0078d4;color:#ffffff;padding:10px 20px;text-decoration:none;border-radius:4px;display:inline-block;font-weight:bold;">Verify Account</a></p>`;
     }
 

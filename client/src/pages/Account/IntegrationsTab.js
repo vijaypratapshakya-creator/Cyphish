@@ -48,6 +48,9 @@ const IntegrationsTab = () => {
     baseUrl: DEFAULT_OLLAMA_URL,
   });
 
+  const [isCustomModel, setIsCustomModel] = useState(false);
+  const [customModelValue, setCustomModelValue] = useState('');
+
   const providers = modelsConfig?.providers
     ? Object.keys(modelsConfig.providers).map((key) => ({
         value: key,
@@ -79,16 +82,32 @@ const IntegrationsTab = () => {
             const modelList = prov?.models ?? [];
             const currentModel = integrationRes.data.model || prov?.defaultModelId;
             const modelInList = modelList.some((m) => m.id === currentModel);
-            setForm((prev) => ({
-              ...prev,
-              provider: p,
-              model: modelInList ? currentModel : (prov?.defaultModelId ?? prov?.models?.[0]?.id),
-              baseUrl: p === 'ollama' ? (integrationRes.data.baseUrl || DEFAULT_OLLAMA_URL) : prev.baseUrl,
-              apiKey: '',
-            }));
+            if (!modelInList && currentModel) {
+              setIsCustomModel(true);
+              setCustomModelValue(currentModel);
+              setForm((prev) => ({
+                ...prev,
+                provider: p,
+                model: '__custom__',
+                baseUrl: p === 'ollama' ? (integrationRes.data.baseUrl || DEFAULT_OLLAMA_URL) : prev.baseUrl,
+                apiKey: '',
+              }));
+            } else {
+              setIsCustomModel(false);
+              setCustomModelValue('');
+              setForm((prev) => ({
+                ...prev,
+                provider: p,
+                model: modelInList ? currentModel : (prov?.defaultModelId ?? prov?.models?.[0]?.id),
+                baseUrl: p === 'ollama' ? (integrationRes.data.baseUrl || DEFAULT_OLLAMA_URL) : prev.baseUrl,
+                apiKey: '',
+              }));
+            }
           } else if (configRes.data?.providers) {
             const firstProvider = Object.keys(configRes.data.providers)[0] || 'ollama';
             const def = configRes.data.providers[firstProvider]?.defaultModelId ?? configRes.data.providers[firstProvider]?.models?.[0]?.id;
+            setIsCustomModel(false);
+            setCustomModelValue('');
             setForm((prev) => ({
               ...prev,
               provider: firstProvider,
@@ -110,6 +129,10 @@ const IntegrationsTab = () => {
   useEffect(() => {
     if (!providerConfig) return;
     const modelIds = providerConfig.models?.map((m) => m.id) ?? [];
+    if (form.model === '__custom__') {
+      setIsCustomModel(true);
+      return;
+    }
     setForm((prev) => {
       const nextModel = modelIds.includes(prev.model) ? prev.model : (providerConfig.defaultModelId ?? modelIds[0]);
       return {
@@ -122,6 +145,17 @@ const IntegrationsTab = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'model') {
+      if (value === '__custom__') {
+        setIsCustomModel(true);
+      } else {
+        setIsCustomModel(false);
+      }
+    }
+    if (name === 'provider') {
+      setIsCustomModel(false);
+      setCustomModelValue('');
+    }
     setForm((prev) => ({ ...prev, [name]: value }));
     setError('');
     setSuccess('');
@@ -130,6 +164,11 @@ const IntegrationsTab = () => {
   const handleVerifyAndSave = async () => {
     setError('');
     setSuccess('');
+    const effectiveModel = isCustomModel ? customModelValue.trim() : form.model;
+    if (!effectiveModel || effectiveModel === '__custom__') {
+      setError('Please specify a valid model name or ID.');
+      return;
+    }
     if (needsApiKey && !form.apiKey.trim() && !integration?.hasApiKey) {
       setError('API key is required for this provider.');
       return;
@@ -142,14 +181,14 @@ const IntegrationsTab = () => {
     try {
       const payload = {
         provider: form.provider,
-        model: form.model,
+        model: effectiveModel,
       };
       if (needsApiKey) payload.apiKey = form.apiKey.trim();
       if (needsBaseUrl) payload.baseUrl = form.baseUrl.trim() || DEFAULT_OLLAMA_URL;
       const res = await verifyAndSaveAIIntegration(payload);
       if (res.success) {
         setSuccess('Integration verified and saved.');
-        setIntegration(res.data || { ...integration, ...form, hasApiKey: !!form.apiKey });
+        setIntegration(res.data || { ...integration, ...form, model: effectiveModel, hasApiKey: !!form.apiKey });
         setForm((prev) => ({ ...prev, apiKey: '' }));
       }
     } catch (err) {
@@ -313,8 +352,29 @@ const IntegrationsTab = () => {
                   {m.label}
                 </MenuItem>
               ))}
+              <MenuItem value="__custom__" sx={{ fontStyle: 'italic', color: 'primary.main', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                ✏️ Custom Model Identifier / Tag...
+              </MenuItem>
             </Select>
           </FormControl>
+
+          {isCustomModel && (
+            <TextField
+              size="small"
+              fullWidth
+              name="customModel"
+              label="Custom Model ID / Name"
+              value={customModelValue}
+              onChange={(e) => {
+                setCustomModelValue(e.target.value);
+                setError('');
+                setSuccess('');
+              }}
+              placeholder="e.g. gemini-3.7-flash, gpt-5, claude-fable-5-1, deepseek-r1:32b"
+              helperText="Enter any exact upstream model identifier supported by your API key or Ollama host."
+              sx={{ mb: 2 }}
+            />
+          )}
 
           {needsApiKey && (
             <TextField

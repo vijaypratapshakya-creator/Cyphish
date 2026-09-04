@@ -319,7 +319,7 @@ export const deleteTemplate = async (req, res) => {
 // Generate an AI-powered threat scenario template
 export const generateAITemplate = async (req, res) => {
     try {
-        const { targetAudience, category, difficulty, scenarioPrompt, companyName, tone } = req.body;
+        const { targetAudience, category, difficulty, scenarioPrompt, companyName, tone, selectedModel } = req.body;
         const { generateThreatScenario } = await import('../services/aiIntegrationService.js');
         const scenario = await generateThreatScenario({
             targetAudience,
@@ -328,6 +328,7 @@ export const generateAITemplate = async (req, res) => {
             scenarioPrompt,
             companyName,
             tone,
+            selectedModel,
         });
 
         res.status(200).json({

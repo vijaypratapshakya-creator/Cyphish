@@ -36,6 +36,7 @@ import {
   Settings as SettingsIcon,
   CheckCircleOutline as CheckIcon,
   Refresh as RefreshIcon,
+  Bolt as BoltIcon,
 } from '@mui/icons-material';
 
 import {
@@ -44,6 +45,7 @@ import {
   createTemplate,
   renderTemplate,
 } from '../../services/templateService';
+import { getAIModelsConfig } from '../../services/integrationService';
 
 const AUDIENCES = [
   'General Employees',
@@ -139,6 +141,10 @@ const AIBuilder = () => {
 
   // Active AI Engine State
   const [activeAI, setActiveAI] = useState(null);
+  const [modelsConfig, setModelsConfig] = useState(null);
+  const [selectedModel, setSelectedModel] = useState('');
+  const [isCustomModel, setIsCustomModel] = useState(false);
+  const [customModelValue, setCustomModelValue] = useState('');
   const [aiLoading, setAiLoading] = useState(true);
 
   // Form Parameters
@@ -166,9 +172,30 @@ const AIBuilder = () => {
   const loadAIStatus = async () => {
     try {
       setAiLoading(true);
-      const res = await getAIIntegration();
-      if (res.success && res.data) {
-        setActiveAI(res.data);
+      const [aiRes, configRes] = await Promise.all([
+        getAIIntegration(),
+        getAIModelsConfig(),
+      ]);
+
+      if (configRes.success && configRes.data) {
+        setModelsConfig(configRes.data);
+      }
+
+      if (aiRes.success && aiRes.data) {
+        setActiveAI(aiRes.data);
+        const providerKey = aiRes.data.provider || 'ollama';
+        const provConfig = configRes.data?.providers?.[providerKey];
+        const initialModel = aiRes.data.model || provConfig?.defaultModelId || provConfig?.models?.[0]?.id || '';
+        const inList = provConfig?.models?.some((m) => m.id === initialModel);
+        if (!inList && initialModel) {
+          setIsCustomModel(true);
+          setCustomModelValue(initialModel);
+          setSelectedModel('__custom__');
+        } else {
+          setIsCustomModel(false);
+          setCustomModelValue('');
+          setSelectedModel(initialModel);
+        }
       } else {
         setActiveAI(null);
       }
@@ -179,6 +206,14 @@ const AIBuilder = () => {
     }
   };
 
+  // Get available models for active provider
+  const availableModels = useMemo(() => {
+    if (!activeAI?.provider || !modelsConfig?.providers?.[activeAI.provider]) {
+      return [];
+    }
+    return modelsConfig.providers[activeAI.provider].models || [];
+  }, [activeAI, modelsConfig]);
+
   const handleApplyPreset = (preset) => {
     setCategory(preset.category);
     setTargetAudience(preset.audience);
@@ -188,6 +223,14 @@ const AIBuilder = () => {
   };
 
   const handleGenerate = async () => {
+    const effectiveModel = isCustomModel ? customModelValue.trim() : selectedModel;
+    if (!effectiveModel || effectiveModel === '__custom__') {
+      setAlert({
+        severity: 'error',
+        message: 'Please select or specify a valid AI model.',
+      });
+      return;
+    }
     setGenerating(true);
     setAlert(null);
     try {
@@ -198,13 +241,14 @@ const AIBuilder = () => {
         tone,
         companyName,
         scenarioPrompt,
+        selectedModel: effectiveModel,
       });
 
       if (res.success && res.data) {
         setGeneratedScenario(res.data);
         setAlert({
           severity: 'success',
-          message: `✨ Scenario generated successfully via ${res.data.aiProvider?.toUpperCase() || 'AI Engine'} (${res.data.aiModel || 'active model'}).`,
+          message: `✨ Scenario generated successfully via ${res.data.aiProvider?.toUpperCase() || 'AI Engine'} (${res.data.aiModel || effectiveModel}).`,
         });
       } else {
         setAlert({
@@ -329,7 +373,7 @@ const AIBuilder = () => {
                 AI Threat Scenario & Template Generator
               </Typography>
               <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                Generate full-fidelity, customizable phishing simulation scenarios powered by your connected AI engine.
+                Generate full-fidelity, customizable phishing simulation scenarios powered by modern AI models and free tiers.
               </Typography>
             </Box>
           </Box>
@@ -340,7 +384,7 @@ const AIBuilder = () => {
             ) : activeAI && activeAI.provider ? (
               <Chip
                 icon={<CheckIcon sx={{ color: '#34d399 !important' }} />}
-                label={`Engine: ${activeAI.provider.toUpperCase()} (${activeAI.model || 'active'})`}
+                label={`Engine: ${activeAI.provider.toUpperCase()} (${selectedModel || activeAI.model || 'Active'})`}
                 sx={{
                   bgcolor: 'rgba(16, 185, 129, 0.15)',
                   color: '#34d399',
@@ -388,8 +432,60 @@ const AIBuilder = () => {
           <Card sx={{ bgcolor: '#111827', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', height: '100%' }}>
             <CardContent sx={{ p: 3 }}>
               <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700, mb: 2 }}>
-                🛠️ Drill Parameters & Pretext Settings
+                🛠️ Drill Parameters & Model Settings
               </Typography>
+
+              {/* Active Model Selector */}
+              {availableModels.length > 0 && (
+                <Box sx={{ mb: 2.5 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel sx={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <BoltIcon sx={{ fontSize: '1rem', color: '#60a5fa' }} /> AI Generation Model
+                    </InputLabel>
+                    <Select
+                      value={selectedModel}
+                      label="AI Generation Model"
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedModel(val);
+                        if (val === '__custom__') {
+                          setIsCustomModel(true);
+                        } else {
+                          setIsCustomModel(false);
+                        }
+                      }}
+                      sx={{ bgcolor: '#0b0f19', color: '#f8fafc', fontWeight: 600 }}
+                    >
+                      {availableModels.map((m) => (
+                        <MenuItem key={m.id} value={m.id}>
+                          {m.name || m.id}
+                        </MenuItem>
+                      ))}
+                      <MenuItem value="__custom__" sx={{ fontStyle: 'italic', color: '#60a5fa', borderTop: '1px dashed rgba(255,255,255,0.1)' }}>
+                        ✏️ Custom Model Identifier / Tag...
+                      </MenuItem>
+                    </Select>
+                  </FormControl>
+
+                  {isCustomModel && (
+                    <TextField
+                      size="small"
+                      fullWidth
+                      label="Custom Model ID / Tag"
+                      value={customModelValue}
+                      onChange={(e) => setCustomModelValue(e.target.value)}
+                      placeholder="e.g. gemini-3.7-flash, gpt-5, claude-fable-5-1, deepseek-r1:32b"
+                      helperText="Specify any model ID accepted by the active provider API."
+                      sx={{
+                        mt: 1.5,
+                        '& .MuiInputBase-root': { bgcolor: '#0b0f19', color: '#f8fafc' },
+                        '& .MuiInputLabel-root': { color: '#94a3b8' },
+                        '& .MuiFormHelperText-root': { color: '#64748b' },
+                      }}
+                    />
+                  )}
+                </Box>
+              )}
 
               {/* Quick Presets */}
               <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, display: 'block', mb: 1 }}>
@@ -614,7 +710,7 @@ const AIBuilder = () => {
                     No Scenario Generated Yet
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#94a3b8', maxWidth: 420, mx: 'auto', mt: 1 }}>
-                    Select your target department, pick a threat theme or quick preset on the left, and click <strong>"Generate Threat Scenario"</strong>.
+                    Select your target department and AI model, pick a threat theme or quick preset on the left, and click <strong>"Generate Threat Scenario"</strong>.
                   </Typography>
                 </Box>
               ) : (
@@ -624,6 +720,9 @@ const AIBuilder = () => {
                   <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
                     <Chip size="small" label={generatedScenario.category} sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 700 }} />
                     <Chip size="small" label={`Difficulty: ${generatedScenario.difficulty}/5`} sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 700 }} />
+                    {generatedScenario.aiModel && (
+                      <Chip size="small" label={`Model: ${generatedScenario.aiModel}`} sx={{ bgcolor: 'rgba(16, 185, 129, 0.15)', color: '#34d399', fontWeight: 600 }} />
+                    )}
                     {generatedScenario.senderNameSuggestion && (
                       <Chip size="small" label={`Suggested Sender: ${generatedScenario.senderNameSuggestion}`} sx={{ bgcolor: 'rgba(148, 163, 184, 0.15)', color: '#cbd5e1' }} />
                     )}
