@@ -45,7 +45,7 @@ import {
   createTemplate,
   renderTemplate,
 } from '../../services/templateService';
-import { getAIModelsConfig } from '../../services/integrationService';
+import { getAIModelsConfig, discoverLiveAIModels } from '../../services/integrationService';
 
 const AUDIENCES = [
   'General Employees',
@@ -142,6 +142,8 @@ const AIBuilder = () => {
   // Active AI Engine State
   const [activeAI, setActiveAI] = useState(null);
   const [modelsConfig, setModelsConfig] = useState(null);
+  const [liveModels, setLiveModels] = useState([]);
+  const [discovering, setDiscovering] = useState(false);
   const [selectedModel, setSelectedModel] = useState('');
   const [isCustomModel, setIsCustomModel] = useState(false);
   const [customModelValue, setCustomModelValue] = useState('');
@@ -196,6 +198,11 @@ const AIBuilder = () => {
           setCustomModelValue('');
           setSelectedModel(initialModel);
         }
+
+        // Trigger background live discovery
+        if (aiRes.data.hasApiKey || aiRes.data.provider === 'ollama') {
+          triggerLiveDiscovery(aiRes.data, initialModel);
+        }
       } else {
         setActiveAI(null);
       }
@@ -206,13 +213,36 @@ const AIBuilder = () => {
     }
   };
 
-  // Get available models for active provider
+  const triggerLiveDiscovery = async (activeData, currentModel) => {
+    try {
+      setDiscovering(true);
+      const discRes = await discoverLiveAIModels();
+      if (discRes.success && Array.isArray(discRes.data?.models) && discRes.data.models.length > 0) {
+        setLiveModels(discRes.data.models);
+        const match = discRes.data.models.find((m) => m.id === currentModel);
+        if (match) {
+          setSelectedModel(match.id);
+        } else if (discRes.data.defaultModelId) {
+          setSelectedModel(discRes.data.defaultModelId);
+        }
+      }
+    } catch (err) {
+      console.warn('Discovery notice:', err.message);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  // Get available models for active provider (prefer live discovered models if available)
   const availableModels = useMemo(() => {
+    if (liveModels.length > 0) {
+      return liveModels;
+    }
     if (!activeAI?.provider || !modelsConfig?.providers?.[activeAI.provider]) {
       return [];
     }
     return modelsConfig.providers[activeAI.provider].models || [];
-  }, [activeAI, modelsConfig]);
+  }, [liveModels, activeAI, modelsConfig]);
 
   const handleApplyPreset = (preset) => {
     setCategory(preset.category);
@@ -438,13 +468,42 @@ const AIBuilder = () => {
               {/* Active Model Selector */}
               {availableModels.length > 0 && (
                 <Box sx={{ mb: 2.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <BoltIcon sx={{ fontSize: '1rem', color: '#60a5fa' }} /> Generation Model
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => triggerLiveDiscovery(activeAI, selectedModel)}
+                      disabled={discovering}
+                      startIcon={discovering ? <CircularProgress size={12} sx={{ color: '#60a5fa' }} /> : <RefreshIcon sx={{ fontSize: '0.9rem' }} />}
+                      sx={{
+                        color: liveModels.length > 0 ? '#34d399' : '#60a5fa',
+                        textTransform: 'none',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        p: 0.3,
+                        px: 0.8,
+                        bgcolor: liveModels.length > 0 ? 'rgba(52, 211, 153, 0.1)' : 'rgba(96, 165, 250, 0.1)',
+                        borderRadius: '6px',
+                        '&:hover': { bgcolor: liveModels.length > 0 ? 'rgba(52, 211, 153, 0.2)' : 'rgba(96, 165, 250, 0.2)' },
+                      }}
+                    >
+                      {discovering
+                        ? 'Scanning Models…'
+                        : liveModels.length > 0
+                        ? `🟢 ${liveModels.length} Live Models Found`
+                        : '🔍 Scan Live Models'}
+                    </Button>
+                  </Box>
                   <FormControl fullWidth size="small">
                     <InputLabel sx={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <BoltIcon sx={{ fontSize: '1rem', color: '#60a5fa' }} /> AI Generation Model
+                      AI Model
                     </InputLabel>
                     <Select
                       value={selectedModel}
-                      label="AI Generation Model"
+                      label="AI Model"
                       onChange={(e) => {
                         const val = e.target.value;
                         setSelectedModel(val);

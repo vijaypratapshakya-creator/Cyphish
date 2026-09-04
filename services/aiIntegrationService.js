@@ -112,6 +112,219 @@ export async function testConnection({ provider, model, apiKey, baseUrl }) {
 }
 
 /**
+ * Discover live active models directly from the provider's API.
+ */
+export async function discoverLiveModels({ provider, apiKey, baseUrl } = {}) {
+  let targetProvider = provider;
+  let targetKey = apiKey;
+  let targetBaseUrl = baseUrl;
+
+  // If parameters not provided, use active integration
+  if (!targetProvider) {
+    const active = await getActiveIntegrationWithKey();
+    if (!active || !active.isActive) {
+      throw new Error('No active AI integration configured.');
+    }
+    targetProvider = active.provider;
+    targetKey = active.apiKey;
+    targetBaseUrl = active.baseUrl;
+  } else if (!targetKey && ['openai', 'gemini', 'claude'].includes(targetProvider)) {
+    const active = await getActiveIntegrationWithKey();
+    if (active && active.provider === targetProvider) {
+      targetKey = active.apiKey;
+    }
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CONNECTIVITY_TIMEOUT_MS);
+
+  try {
+    // 1. Google Gemini Live Discovery
+    if (targetProvider === 'gemini') {
+      const key = targetKey && String(targetKey).trim();
+      if (!key) throw new Error('API key is required to discover Gemini models.');
+      
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`, {
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error?.message || `Failed to fetch Gemini models (${res.status})`);
+      }
+
+      const data = await res.json();
+      const rawList = Array.isArray(data?.models) ? data.models : [];
+
+      // Filter for generateContent models and format
+      const discovered = rawList
+        .filter((m) => {
+          const methods = m.supportedGenerationMethods || [];
+          return methods.includes('generateContent');
+        })
+        .map((m) => {
+          const cleanId = (m.name || '').replace(/^models\//, '');
+          const isFlash = cleanId.includes('flash');
+          const isPro = cleanId.includes('pro');
+          const isExp = cleanId.includes('exp');
+          let labelBadge = '⚡ [Live from Your Google Key]';
+          if (isFlash) labelBadge = '⚡ [Fast / Generous Free Tier]';
+          else if (isPro) labelBadge = '⚡ [Advanced Reasoning]';
+          else if (isExp) labelBadge = '⚡ [Experimental]';
+
+          return {
+            id: cleanId,
+            name: `${m.displayName || cleanId} ${labelBadge}`,
+            tier: 'live_discovered',
+            description: m.description || '',
+            inputTokenLimit: m.inputTokenLimit,
+            outputTokenLimit: m.outputTokenLimit,
+          };
+        });
+
+      // Priority sort: standard 2.0/1.5 flash models first
+      discovered.sort((a, b) => {
+        if (a.id === 'gemini-2.0-flash') return -1;
+        if (b.id === 'gemini-2.0-flash') return 1;
+        if (a.id === 'gemini-1.5-flash') return -1;
+        if (b.id === 'gemini-1.5-flash') return 1;
+        if (a.id.includes('flash') && !b.id.includes('flash')) return -1;
+        if (!a.id.includes('flash') && b.id.includes('flash')) return 1;
+        return a.id.localeCompare(b.id);
+      });
+
+      return {
+        provider: 'gemini',
+        live: true,
+        count: discovered.length,
+        defaultModelId: discovered.find((m) => m.id === 'gemini-2.0-flash')?.id || discovered[0]?.id || 'gemini-2.0-flash',
+        models: discovered,
+      };
+    }
+
+    // 2. Ollama Live Discovery
+    if (targetProvider === 'ollama') {
+      const url = (targetBaseUrl && String(targetBaseUrl).trim()) ? String(targetBaseUrl).trim().replace(/\/$/, '') : 'http://localhost:11434';
+      const res = await fetch(`${url}/api/tags`, { signal: controller.signal });
+      if (!res.ok) throw new Error(`Ollama unreachable at ${url} (${res.status})`);
+      const data = await res.json();
+      const rawList = Array.isArray(data?.models) ? data.models : [];
+      const discovered = rawList.map((m) => {
+        const id = m.name || m.model;
+        const sizeGb = m.size ? (m.size / (1024 * 1024 * 1024)).toFixed(1) + ' GB' : '';
+        return {
+          id,
+          name: `${id} ⚡ [Local Installed${sizeGb ? ` · ${sizeGb}` : ''}]`,
+          tier: 'free_local',
+          details: m.details,
+        };
+      });
+
+      return {
+        provider: 'ollama',
+        live: true,
+        count: discovered.length,
+        defaultModelId: discovered[0]?.id || 'llama3.2',
+        models: discovered,
+      };
+    }
+
+    // 3. OpenAI Live Discovery
+    if (targetProvider === 'openai') {
+      const key = targetKey && String(targetKey).trim();
+      if (!key) throw new Error('API key is required to discover OpenAI models.');
+      const res = await fetch('https://api.openai.com/v1/models', {
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.message || `OpenAI models fetch failed (${res.status})`);
+      }
+      const data = await res.json();
+      const rawList = Array.isArray(data?.data) ? data.data : [];
+      const chatPrefixes = ['gpt-4', 'gpt-3.5', 'o1', 'o3', 'chatgpt'];
+      const filtered = rawList.filter((m) => chatPrefixes.some((p) => (m.id || '').startsWith(p)));
+      
+      const discovered = filtered.map((m) => ({
+        id: m.id,
+        name: `${m.id} [Live OpenAI Account Model]`,
+        tier: 'live_discovered',
+        created: m.created,
+      }));
+
+      discovered.sort((a, b) => {
+        if (a.id === 'gpt-4o-mini') return -1;
+        if (b.id === 'gpt-4o-mini') return 1;
+        if (a.id === 'gpt-4o') return -1;
+        if (b.id === 'gpt-4o') return 1;
+        return a.id.localeCompare(b.id);
+      });
+
+      return {
+        provider: 'openai',
+        live: true,
+        count: discovered.length,
+        defaultModelId: 'gpt-4o-mini',
+        models: discovered,
+      };
+    }
+
+    // 4. Claude Live Discovery
+    if (targetProvider === 'claude') {
+      const key = targetKey && String(targetKey).trim();
+      if (!key) throw new Error('API key is required to discover Claude models.');
+      const res = await fetch('https://api.anthropic.com/v1/models', {
+        signal: controller.signal,
+        headers: {
+          'x-api-key': key,
+          'anthropic-version': '2023-06-01',
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawList = Array.isArray(data?.data) ? data.data : [];
+        if (rawList.length > 0) {
+          const discovered = rawList.map((m) => ({
+            id: m.id,
+            name: `${m.display_name || m.id} [Live Anthropic Account Model]`,
+            tier: 'live_discovered',
+          }));
+          return {
+            provider: 'claude',
+            live: true,
+            count: discovered.length,
+            defaultModelId: discovered[0]?.id || 'claude-3-7-sonnet-20250219',
+            models: discovered,
+          };
+        }
+      }
+
+      // If Anthropic list endpoint is restricted on the key, return verified models
+      const cfg = await getModelsConfig();
+      return {
+        provider: 'claude',
+        live: false,
+        count: cfg.providers?.claude?.models?.length || 0,
+        defaultModelId: cfg.providers?.claude?.defaultModelId || 'claude-3-7-sonnet-20250219',
+        models: cfg.providers?.claude?.models || [],
+      };
+    }
+
+    throw new Error(`Unsupported provider: ${targetProvider}`);
+
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Discovery timed out. Check connection to provider.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Load AI models config from data/models.json.
  */
 export async function getModelsConfig() {
@@ -128,14 +341,12 @@ export async function getModelsConfig() {
           gemini: {
             defaultModelId: 'gemini-2.0-flash',
             models: [
-              { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash ⚡ [Verified / Recommended / Generous Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash ⚡ [Verified / Highest Reliability / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash ⚡ [Verified / Next-Gen Flash / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite ⚡ [Verified / Lowest Latency / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash-8B ⚡ [Verified / High Throughput / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro ⚡ [Verified / 2M Deep Context / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro [Verified / Advanced Reasoning]', tier: 'standard' },
-              { id: 'gemini-2.0-pro-exp-02-05', name: 'Gemini 2.0 Pro (Extended Thinking) ⚡ [Experimental Preview]', tier: 'reasoning_free' },
+              { id: 'gemini-2.0-flash', name: '3.7 Flash / Gemini 2.0 Flash ⚡ [All-Around Help / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-2.0-flash-lite', name: '3.5 Flash-Lite / Gemini 2.0 Flash-Lite ⚡ [Fastest Answers / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-1.5-pro', name: '3.1 Pro / Gemini 1.5 Pro ⚡ [Advanced Reasoning / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-2.0-pro-exp-02-05', name: 'Extended Thinking / Gemini 2.0 Pro ⚡ [Complex Problem Solving]', tier: 'reasoning_free' },
+              { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash ⚡ [Highest Availability & Reliability / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash-8B ⚡ [High Throughput / Free Tier]', tier: 'free_tier' },
             ],
           },
           claude: {
@@ -325,6 +536,27 @@ You MUST respond with a single, strictly valid JSON object adhering to this sche
 }
 
 /**
+ * Smart candidate resolver for Gemini models
+ */
+function resolveGeminiModelCandidates(inputModel) {
+  const raw = String(inputModel || 'gemini-2.0-flash').trim().replace(/^models\//, '');
+  const lower = raw.toLowerCase();
+  const candidates = [];
+
+  if (lower.includes('3.7') || lower.includes('2.5') || lower.includes('all-around')) {
+    candidates.push(raw, 'gemini-2.0-flash', 'gemini-1.5-flash');
+  } else if (lower.includes('3.5') || lower.includes('flash-lite') || lower.includes('fastest')) {
+    candidates.push(raw, 'gemini-2.0-flash-lite', 'gemini-2.0-flash', 'gemini-1.5-flash');
+  } else if (lower.includes('3.1') || lower.includes('thinking') || lower.includes('reasoning') || lower.includes('exp')) {
+    candidates.push(raw, 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash');
+  } else {
+    candidates.push(raw, 'gemini-2.0-flash', 'gemini-1.5-flash');
+  }
+
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+/**
  * Generate a complete threat scenario using the active configured AI integration.
  */
 export async function generateThreatScenario({
@@ -419,13 +651,7 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
     let usedModel = model;
     if (provider === 'gemini') {
       const key = apiKey && String(apiKey).trim();
-      const requestedModel = (model || 'gemini-2.0-flash').trim().replace(/^models\//, '');
-      const candidateModels = [requestedModel];
-      
-      // If requested model isn't already the ultra-reliable fallback gemini-1.5-flash, add it as a backup
-      if (requestedModel !== 'gemini-1.5-flash') {
-        candidateModels.push('gemini-1.5-flash');
-      }
+      const candidateModels = resolveGeminiModelCandidates(model);
 
       let lastError = null;
       let generationSuccess = false;
@@ -438,7 +664,7 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
           if (attempt > 0) {
             // Exponential backoff
-            const delay = 1500 * Math.pow(2, attempt - 1);
+            const delay = 1200 * Math.pow(2, attempt - 1);
             await new Promise((resolve) => setTimeout(resolve, delay));
           }
 
@@ -474,13 +700,21 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
           const errBody = await res.json().catch(() => ({}));
           const errMsg = errBody.error?.message || res.statusText;
 
+          // If auth issue, throw immediately
+          if (res.status === 400 || res.status === 401 || res.status === 403) {
+            const isKeyError = errMsg.toLowerCase().includes('api key') || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('denied');
+            if (isKeyError) {
+              throw new Error(`Gemini authentication / API Key error: ${errMsg}`);
+            }
+          }
+
           if (res.status === 404) {
-            lastError = new Error(`Gemini model "${currentModel}" was not found (404). This model ID does not exist in Google AI Studio API or is not enabled for generateContent. Please use verified models like "gemini-2.0-flash", "gemini-1.5-flash", or "gemini-2.5-flash".`);
-            break; // don't retry non-existent model
+            lastError = new Error(`Gemini model "${currentModel}" not found (404).`);
+            break; // Move to next fallback candidate
           }
 
           if (res.status === 503 || res.status === 429) {
-            lastError = new Error(`Gemini service high demand (${res.status}): ${errMsg}`);
+            lastError = new Error(`Gemini high demand (${res.status}): ${errMsg}`);
             continue; // retry with backoff
           }
 
@@ -489,10 +723,6 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
         }
 
         if (generationSuccess) break;
-        // If 404 or auth error, don't try fallback models
-        if (lastError && !lastError.message.includes('503') && !lastError.message.includes('429')) {
-          throw lastError;
-        }
       }
 
       if (!generationSuccess) {

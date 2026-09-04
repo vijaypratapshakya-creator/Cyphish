@@ -54,6 +54,16 @@ export async function upsertAIIntegration(req, res) {
   }
 }
 
+export async function discoverLiveModels(req, res) {
+  try {
+    const params = req.method === 'POST' ? req.body : req.query;
+    const data = await aiIntegrationService.discoverLiveModels(params);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+}
+
 export async function disconnectAIIntegration(req, res) {
   try {
     if (!req.user || req.user.role !== 'admin') {
@@ -72,4 +82,5 @@ export default {
   verifyAIIntegration,
   upsertAIIntegration,
   disconnectAIIntegration,
+  discoverLiveModels,
 };

@@ -5,6 +5,8 @@ import authMiddleware from '../middlewares/authMiddleware.js';
 const router = express.Router();
 
 router.get('/ai/models', authMiddleware, integrationController.getAIModelsConfig);
+router.get('/ai/discover', authMiddleware, integrationController.discoverLiveModels);
+router.post('/ai/discover', authMiddleware, integrationController.discoverLiveModels);
 router.get('/ai', authMiddleware, integrationController.getAIIntegration);
 router.post('/ai/verify', authMiddleware, integrationController.verifyAIIntegration);
 router.post('/ai', authMiddleware, integrationController.upsertAIIntegration);

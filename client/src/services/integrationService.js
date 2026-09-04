@@ -19,3 +19,13 @@ export const disconnectAIIntegration = async () => {
   const res = await axiosInstance.post('/api/integrations/ai/disconnect');
   return res.data;
 };
+
+export const discoverLiveAIModels = async (params = {}) => {
+  const res = await axiosInstance.get('/api/integrations/ai/discover', { params });
+  return res.data;
+};
+
+export const discoverAIModelsWithPayload = async (payload) => {
+  const res = await axiosInstance.post('/api/integrations/ai/discover', payload);
+  return res.data;
+};

@@ -5,14 +5,12 @@
     "gemini": {
       "defaultModelId": "gemini-2.0-flash",
       "models": [
-        { "id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash ⚡ [Verified / Recommended / Generous Free Tier]", "tier": "free_tier" },
-        { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash ⚡ [Verified / Highest Reliability / Free Tier]", "tier": "free_tier" },
-        { "id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash ⚡ [Verified / Next-Gen Flash / Free Tier]", "tier": "free_tier" },
-        { "id": "gemini-2.0-flash-lite", "name": "Gemini 2.0 Flash-Lite ⚡ [Verified / Lowest Latency / Free Tier]", "tier": "free_tier" },
-        { "id": "gemini-1.5-flash-8b", "name": "Gemini 1.5 Flash-8B ⚡ [Verified / High Throughput / Free Tier]", "tier": "free_tier" },
-        { "id": "gemini-1.5-pro", "name": "Gemini 1.5 Pro ⚡ [Verified / 2M Deep Context / Free Tier]", "tier": "free_tier" },
-        { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro [Verified / Advanced Reasoning]", "tier": "standard" },
-        { "id": "gemini-2.0-pro-exp-02-05", "name": "Gemini 2.0 Pro (Extended Thinking) ⚡ [Experimental Preview]", "tier": "reasoning_free" }
+        { "id": "gemini-2.0-flash", "name": "3.7 Flash / Gemini 2.0 Flash ⚡ [All-Around Help / Free Tier]", "tier": "free_tier" },
+        { "id": "gemini-2.0-flash-lite", "name": "3.5 Flash-Lite / Gemini 2.0 Flash-Lite ⚡ [Fastest Answers / Free Tier]", "tier": "free_tier" },
+        { "id": "gemini-1.5-pro", "name": "3.1 Pro / Gemini 1.5 Pro ⚡ [Advanced Reasoning / Free Tier]", "tier": "free_tier" },
+        { "id": "gemini-2.0-pro-exp-02-05", "name": "Extended Thinking / Gemini 2.0 Pro ⚡ [Complex Problem Solving]", "tier": "reasoning_free" },
+        { "id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash ⚡ [Highest Availability & Reliability / Free Tier]", "tier": "free_tier" },
+        { "id": "gemini-1.5-flash-8b", "name": "Gemini 1.5 Flash-8B ⚡ [High Throughput / Free Tier]", "tier": "free_tier" }
       ]
     },
     "claude": {

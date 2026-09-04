@@ -21,7 +21,13 @@ import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
 import PowerOffRoundedIcon from '@mui/icons-material/PowerOffRounded';
 import PsychologyRoundedIcon from '@mui/icons-material/PsychologyRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
-import { getAIModelsConfig, getAIIntegration, verifyAndSaveAIIntegration, disconnectAIIntegration } from '../../services/integrationService';
+import {
+  getAIModelsConfig,
+  getAIIntegration,
+  verifyAndSaveAIIntegration,
+  disconnectAIIntegration,
+  discoverAIModelsWithPayload,
+} from '../../services/integrationService';
 
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 
@@ -36,6 +42,8 @@ const IntegrationsTab = () => {
   const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [modelsConfig, setModelsConfig] = useState(null);
+  const [discoveredModels, setDiscoveredModels] = useState({});
+  const [discovering, setDiscovering] = useState(false);
   const [saving, setSaving] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +66,8 @@ const IntegrationsTab = () => {
       }))
     : [];
   const providerConfig = modelsConfig?.providers?.[form.provider];
-  const modelOptions = providerConfig?.models?.map((m) => ({ value: m.id, label: m.name })) ?? [];
+  const activeList = discoveredModels[form.provider] || providerConfig?.models || [];
+  const modelOptions = activeList.map((m) => ({ value: m.id, label: m.name }));
 
   const needsApiKey = ['openai', 'gemini', 'claude'].includes(form.provider);
   const needsBaseUrl = form.provider === 'ollama';
@@ -159,6 +168,43 @@ const IntegrationsTab = () => {
     setForm((prev) => ({ ...prev, [name]: value }));
     setError('');
     setSuccess('');
+  };
+
+  const handleDiscover = async () => {
+    setError('');
+    setSuccess('');
+    if (needsApiKey && !form.apiKey.trim() && !integration?.hasApiKey) {
+      setError('Please enter your API key to discover available models.');
+      return;
+    }
+    if (needsBaseUrl && !form.baseUrl.trim()) {
+      setError('Please enter Ollama server URL to discover local models.');
+      return;
+    }
+    setDiscovering(true);
+    try {
+      const res = await discoverAIModelsWithPayload({
+        provider: form.provider,
+        apiKey: form.apiKey.trim() || undefined,
+        baseUrl: form.baseUrl.trim() || undefined,
+      });
+      if (res.success && res.data?.models?.length > 0) {
+        setDiscoveredModels((prev) => ({
+          ...prev,
+          [form.provider]: res.data.models,
+        }));
+        setSuccess(`✨ Discovered ${res.data.models.length} active models directly from your ${PROVIDER_LABELS[form.provider] || form.provider} account!`);
+        if (res.data.defaultModelId) {
+          setForm((prev) => ({ ...prev, model: res.data.defaultModelId }));
+        }
+      } else {
+        setSuccess('Provider verified. Default model catalog active.');
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Failed to discover models from provider.');
+    } finally {
+      setDiscovering(false);
+    }
   };
 
   const handleVerifyAndSave = async () => {
@@ -404,7 +450,7 @@ const IntegrationsTab = () => {
             />
           )}
 
-          <Stack direction="row" gap={1.5} sx={{ mt: 2, pt: 1 }}>
+          <Stack direction="row" gap={1.5} flexWrap="wrap" sx={{ mt: 2, pt: 1 }}>
             <Button
               variant="contained"
               onClick={handleVerifyAndSave}
@@ -412,6 +458,15 @@ const IntegrationsTab = () => {
               startIcon={saving ? <CircularProgress size={18} color="inherit" /> : null}
             >
               {saving ? 'Saving…' : 'Verify & save'}
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleDiscover}
+              disabled={discovering}
+              startIcon={discovering ? <CircularProgress size={18} color="inherit" /> : null}
+              sx={{ borderColor: 'primary.main', color: 'primary.main' }}
+            >
+              {discovering ? 'Discovering…' : '🔍 Discover live models'}
             </Button>
             {integration && (
               <Button
