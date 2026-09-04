@@ -9,7 +9,7 @@ const MODELS_CONFIG_PATH = path.join(__dirname, '..', 'data', 'models.json');
 const PROVIDERS_REQUIRING_KEY = ['openai', 'gemini', 'claude'];
 const PROVIDERS_REQUIRING_URL = ['ollama'];
 const CONNECTIVITY_TIMEOUT_MS = 10000;
-const GENERATION_TIMEOUT_MS = 45000;
+const GENERATION_TIMEOUT_MS = 60000;
 
 /**
  * Test connectivity to the configured AI provider before saving.
@@ -64,6 +64,22 @@ export async function testConnection({ provider, model, apiKey, baseUrl }) {
         throw new Error(msg);
       }
       if (!res.ok) throw new Error(`Gemini request failed: ${res.status} ${res.statusText}`);
+
+      const requestedModel = (model || '').trim().replace(/^models\//, '');
+      if (requestedModel) {
+        const data = await res.json().catch(() => ({}));
+        const list = Array.isArray(data?.models) ? data.models : [];
+        if (list.length > 0) {
+          const supported = list
+            .filter((m) => m.supportedGenerationMethods?.includes('generateContent'))
+            .map((m) => (m.name || '').replace(/^models\//, ''));
+          if (supported.length > 0 && !supported.includes(requestedModel)) {
+            if (requestedModel.includes('3.1') || requestedModel.includes('3.5') || requestedModel.includes('3.7')) {
+              throw new Error(`Model "${requestedModel}" does not exist in Google AI Studio API. Verified available models: ${supported.filter((s) => s.startsWith('gemini-')).slice(0, 5).join(', ')}.`);
+            }
+          }
+        }
+      }
       return;
     }
 
@@ -106,58 +122,40 @@ export async function getModelsConfig() {
   } catch (err) {
     if (err.code === 'ENOENT') {
       return {
-        version: 3,
+        version: 4,
         updated: '2026-09-04',
         providers: {
           gemini: {
             defaultModelId: 'gemini-2.0-flash',
             models: [
-              { id: 'gemini-3.7-flash', name: 'Gemini 3.7 Flash ⚡ [Hybrid Reasoning & Speed / Generous Free Tier]', tier: 'latest_free' },
-              { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite ⚡ [Ultra-Low Latency / Generous Free Tier]', tier: 'latest_free' },
-              { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro [Frontier Multimodal & Deep Analysis]', tier: 'frontier' },
-              { id: 'gemini-2.0-pro-exp-02-05', name: 'Gemini 2.0 Pro (Extended Thinking) ⚡ [Experimental / Free Tier]', tier: 'reasoning_free' },
-              { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash ⚡ [High Speed Generation / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro [Complex Analysis & Reasoning]', tier: 'standard' },
-              { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash ⚡ [Default / 15 RPM Free Tier / Multimodal]', tier: 'free_tier' },
-              { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite ⚡ [Fast Lightweight / Free Tier]', tier: 'free_tier' },
-              { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash ⚡ [15 RPM Free Tier Available]', tier: 'free_tier' },
-              { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro ⚡ [2M Context Window / Free Tier Available]', tier: 'free_tier' },
+              { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash ⚡ [Verified / Recommended / Generous Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash ⚡ [Verified / Highest Reliability / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash ⚡ [Verified / Next-Gen Flash / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash-Lite ⚡ [Verified / Lowest Latency / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-1.5-flash-8b', name: 'Gemini 1.5 Flash-8B ⚡ [Verified / High Throughput / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro ⚡ [Verified / 2M Deep Context / Free Tier]', tier: 'free_tier' },
+              { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro [Verified / Advanced Reasoning]', tier: 'standard' },
+              { id: 'gemini-2.0-pro-exp-02-05', name: 'Gemini 2.0 Pro (Extended Thinking) ⚡ [Experimental Preview]', tier: 'reasoning_free' },
             ],
           },
           claude: {
             defaultModelId: 'claude-3-7-sonnet-20250219',
             models: [
-              { id: 'claude-fable-5-1', name: 'Claude Fable 5.1 [Frontier Creative & Adaptive Threat Engine]', tier: 'frontier' },
-              { id: 'claude-opus-5', name: 'Claude Opus 5 [Extreme Nuance & Autonomous Phish Modeling]', tier: 'frontier' },
-              { id: 'claude-sonnet-5', name: 'Claude Sonnet 5 [Next-Gen Flagship Benchmark & Speed]', tier: 'frontier' },
-              { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5 ⚡ [Ultra Fast & Cost-Effective]', tier: 'budget' },
-              { id: 'claude-fable-5', name: 'Claude Fable 5 [Advanced Threat Narrative Synthesis]', tier: 'advanced' },
-              { id: 'claude-opus-4-8', name: 'Claude Opus 4.8 [High Reasoning Benchmark]', tier: 'advanced' },
-              { id: 'claude-opus-4-7', name: 'Claude Opus 4.7 [Deep Logic & Nuanced Email Simulation]', tier: 'advanced' },
-              { id: 'claude-opus-4-6', name: 'Claude Opus 4.6 [Extended Analytical Depth]', tier: 'advanced' },
-              { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 [Balanced Speed & Reasoning]', tier: 'advanced' },
-              { id: 'claude-opus-3', name: 'Claude Opus 3 [Complex Analysis Benchmark]', tier: 'standard' },
-              { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet [Hybrid Reasoning & Code / Industry Benchmark]', tier: 'standard' },
-              { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet [Industry Standard Benchmark]', tier: 'standard' },
-              { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku ⚡ [Fast & Cost Effective]', tier: 'budget' },
-              { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus [Deep Analysis & Research]', tier: 'standard' },
+              { id: 'claude-3-7-sonnet-20250219', name: 'Claude 3.7 Sonnet [Verified / Hybrid Reasoning Benchmark]', tier: 'standard' },
+              { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet [Verified / Industry Standard Benchmark]', tier: 'standard' },
+              { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku ⚡ [Verified / Fast & Cost Effective]', tier: 'budget' },
+              { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus [Verified / Deep Analysis & Research]', tier: 'standard' },
             ],
           },
           openai: {
             defaultModelId: 'gpt-4o-mini',
             models: [
-              { id: 'gpt-5.2', name: 'GPT-5.2 [Frontier Intelligence & Phishing Realism]', tier: 'frontier' },
-              { id: 'gpt-5', name: 'GPT-5 [Flagship Autonomous Reasoning & Multimodal]', tier: 'frontier' },
-              { id: 'gpt-5-mini', name: 'GPT-5 mini ⚡ [High Efficiency / Low Latency]', tier: 'budget' },
-              { id: 'gpt-4.1', name: 'GPT-4.1 [Precision Reasoning & Threat Engineering]', tier: 'advanced' },
-              { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini ⚡ [Lightweight & High Speed]', tier: 'budget' },
-              { id: 'o3', name: 'o3 [Frontier High-Compute STEM & Logic Reasoning]', tier: 'reasoning' },
-              { id: 'o3-mini', name: 'o3-mini [Latest Advanced STEM / Fast Reasoning]', tier: 'reasoning' },
-              { id: 'o1', name: 'o1 [Complex Logic & Social Engineering Analysis]', tier: 'reasoning' },
-              { id: 'o1-mini', name: 'o1-mini [Fast Reasoning]', tier: 'reasoning' },
-              { id: 'gpt-4o', name: 'GPT-4o [Flagship Multimodal Intelligence]', tier: 'standard' },
-              { id: 'gpt-4o-mini', name: 'GPT-4o mini ⚡ [Cost-Effective / Free Trial Grants / Fast]', tier: 'budget' },
-              { id: 'gpt-4-turbo', name: 'GPT-4 Turbo [Reliable Production Workhorse]', tier: 'legacy' },
+              { id: 'gpt-4o-mini', name: 'GPT-4o mini ⚡ [Verified / Fast / Free Trial Grants]', tier: 'budget' },
+              { id: 'gpt-4o', name: 'GPT-4o [Verified / Flagship Multimodal Intelligence]', tier: 'standard' },
+              { id: 'o3-mini', name: 'o3-mini [Verified / Latest Advanced STEM / Fast Reasoning]', tier: 'reasoning' },
+              { id: 'o1', name: 'o1 [Verified / Complex Logic & Social Engineering]', tier: 'reasoning' },
+              { id: 'o1-mini', name: 'o1-mini [Verified / Fast Reasoning]', tier: 'reasoning' },
+              { id: 'gpt-4-turbo', name: 'GPT-4 Turbo [Verified / Reliable Production Workhorse]', tier: 'legacy' },
             ],
           },
           ollama: {
@@ -418,34 +416,88 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
     }
 
     // 3. Google Gemini Provider
-    else if (provider === 'gemini') {
+    let usedModel = model;
+    if (provider === 'gemini') {
       const key = apiKey && String(apiKey).trim();
-      const targetModel = model || 'gemini-2.0-flash';
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(key)}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: `${systemPrompt}\n\nTask:\n${userPrompt}` },
-              ],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.7,
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        throw new Error(`Gemini error (${res.status}): ${errBody.error?.message || res.statusText}`);
+      const requestedModel = (model || 'gemini-2.0-flash').trim().replace(/^models\//, '');
+      const candidateModels = [requestedModel];
+      
+      // If requested model isn't already the ultra-reliable fallback gemini-1.5-flash, add it as a backup
+      if (requestedModel !== 'gemini-1.5-flash') {
+        candidateModels.push('gemini-1.5-flash');
       }
-      const data = await res.json();
-      rawResponseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      let lastError = null;
+      let generationSuccess = false;
+
+      for (let cIdx = 0; cIdx < candidateModels.length; cIdx++) {
+        const currentModel = candidateModels[cIdx];
+        const isFallback = cIdx > 0;
+        const maxRetries = isFallback ? 1 : 2;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          if (attempt > 0) {
+            // Exponential backoff
+            const delay = 1500 * Math.pow(2, attempt - 1);
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${currentModel}:generateContent?key=${encodeURIComponent(key)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    { text: `${systemPrompt}\n\nTask:\n${userPrompt}` },
+                  ],
+                },
+              ],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0.7,
+              },
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            rawResponseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (rawResponseText) {
+              usedModel = currentModel;
+              generationSuccess = true;
+              break;
+            }
+          }
+
+          const errBody = await res.json().catch(() => ({}));
+          const errMsg = errBody.error?.message || res.statusText;
+
+          if (res.status === 404) {
+            lastError = new Error(`Gemini model "${currentModel}" was not found (404). This model ID does not exist in Google AI Studio API or is not enabled for generateContent. Please use verified models like "gemini-2.0-flash", "gemini-1.5-flash", or "gemini-2.5-flash".`);
+            break; // don't retry non-existent model
+          }
+
+          if (res.status === 503 || res.status === 429) {
+            lastError = new Error(`Gemini service high demand (${res.status}): ${errMsg}`);
+            continue; // retry with backoff
+          }
+
+          lastError = new Error(`Gemini error (${res.status}): ${errMsg}`);
+          break;
+        }
+
+        if (generationSuccess) break;
+        // If 404 or auth error, don't try fallback models
+        if (lastError && !lastError.message.includes('503') && !lastError.message.includes('429')) {
+          throw lastError;
+        }
+      }
+
+      if (!generationSuccess) {
+        throw lastError || new Error('Failed to generate template via Gemini.');
+      }
     }
 
     // 4. Anthropic Claude Provider
@@ -499,7 +551,7 @@ Remember to return ONLY the raw JSON object matching the required schema. Ensure
         { title: '2. Suspicious Link Target', description: 'Destination link is not verified.' },
       ],
       aiProvider: provider,
-      aiModel: model,
+      aiModel: provider === 'gemini' ? (usedModel || model) : model,
     };
 
   } catch (err) {
