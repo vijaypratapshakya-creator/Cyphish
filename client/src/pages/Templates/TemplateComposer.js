@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -94,6 +94,7 @@ const DEFAULT_HTML_TEMPLATE = `<!DOCTYPE html>
 
 const TemplateComposer = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
   const isEditing = Boolean(id);
 
@@ -121,8 +122,15 @@ const TemplateComposer = () => {
         }
         setFetchLoading(false);
       });
+    } else if (location.state && location.state.template) {
+      const t = location.state.template;
+      if (t.name) setName(t.name);
+      if (t.subject) setSubject(t.subject);
+      if (t.category) setCategory(t.category);
+      if (t.difficulty) setDifficulty(Number(t.difficulty) || 3);
+      if (t.htmlContent) setHtmlContent(t.htmlContent);
     }
-  }, [id, isEditing]);
+  }, [id, isEditing, location.state]);
 
   const insertToken = (token) => {
     setHtmlContent((prev) => `${prev} ${token}`);

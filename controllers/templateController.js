@@ -315,3 +315,31 @@ export const deleteTemplate = async (req, res) => {
         });
     }
 };
+
+// Generate an AI-powered threat scenario template
+export const generateAITemplate = async (req, res) => {
+    try {
+        const { targetAudience, category, difficulty, scenarioPrompt, companyName, tone } = req.body;
+        const { generateThreatScenario } = await import('../services/aiIntegrationService.js');
+        const scenario = await generateThreatScenario({
+            targetAudience,
+            category,
+            difficulty,
+            scenarioPrompt,
+            companyName,
+            tone,
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'AI threat scenario generated successfully',
+            data: scenario,
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message,
+        });
+    }
+};
+

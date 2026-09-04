@@ -41,6 +41,16 @@ export const deleteTemplate = async (id) => {
   return response.data;
 };
 
+export const generateAITemplate = async (payload) => {
+  const response = await axiosInstance.post('/api/template/ai-generate', payload);
+  return response.data;
+};
+
+export const getAIIntegration = async () => {
+  const response = await axiosInstance.get('/api/integrations/ai');
+  return response.data;
+};
+
 const templateService = {
   renderTemplate,
   getTemplates,
@@ -48,6 +58,8 @@ const templateService = {
   createTemplate,
   updateTemplate,
   deleteTemplate,
+  generateAITemplate,
+  getAIIntegration,
 };
 
 export default templateService;

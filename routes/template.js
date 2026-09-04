@@ -1,4 +1,3 @@
-// src/routes/template.js
 import express from 'express';
 import {
     createTemplate,
@@ -6,10 +5,11 @@ import {
     getTemplateList,
     getTemplateById,
     updateTemplate,
-    deleteTemplate
+    deleteTemplate,
+    generateAITemplate,
 } from '../controllers/templateController.js';
 import authMiddleware from '../middlewares/authMiddleware.js';
-import { uploadHTML } from '../middlewares/uploadHTML.js'; // Import the uploadHTML middleware
+import { uploadHTML } from '../middlewares/uploadHTML.js';
 import requireAdmin from '../middlewares/requireAdmin.js';
 
 const router = express.Router();
@@ -17,6 +17,9 @@ const router = express.Router();
 // Protect routes with authMiddleware
 router.use(authMiddleware);
 router.use(requireAdmin);
+
+// AI Template Generation
+router.post('/ai-generate', generateAITemplate);
 
 // Create a new template (with HTML file upload)
 router.post('/', uploadHTML.single('file'), createTemplate);
