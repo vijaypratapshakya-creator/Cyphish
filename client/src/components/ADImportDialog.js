@@ -7,7 +7,6 @@ import {
   Button,
   Box,
   Typography,
-  Grid,
   TextField,
   Chip,
   Checkbox,
@@ -15,7 +14,6 @@ import {
   RadioGroup,
   Radio,
   FormControl,
-  Autocomplete,
   Table,
   TableBody,
   TableCell,
@@ -24,6 +22,7 @@ import {
   TableRow,
   Alert,
   CircularProgress,
+  TablePagination,
 } from '@mui/material';
 import {
   Business as BusinessIcon,
@@ -33,6 +32,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Settings as SettingsIcon,
   Sync as SyncIcon,
+  
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { getDirectoryMetadata, queryDirectoryTargets, searchDirectoryUsers, triggerDirectorySyncNow } from '../services/systemService';
@@ -54,9 +54,14 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
 
   // User search selection
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState([]);
+  const [unifiedResults, setUnifiedResults] = useState([]);
   const [selectedEmails, setSelectedEmails] = useState([]);
+  
+  // Pagination
+  const [page, setPage] = useState(0);
+  const rowsPerPage = 15;
 
   useEffect(() => {
     if (open) {
@@ -65,9 +70,11 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
       setSelectedOus([]);
       setSelectedGroups([]);
       setSearchQuery('');
-      setSearchResults([]);
+      setDebouncedQuery('');
+      setUnifiedResults([]);
       setSelectedEmails([]);
       setMatchedCount(null);
+      setPage(0);
     }
   }, [open]);
 
@@ -99,6 +106,49 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
     }
   };
 
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Fetch or compute results based on mode and query
+  useEffect(() => {
+    let active = true;
+    const fetchResults = async () => {
+      if (!adMeta.ldapEnabled) return;
+      if (adMode === 'filter') {
+        const q = debouncedQuery.toLowerCase();
+        const depts = (adMeta.departments || []).filter(d => d.toLowerCase().includes(q)).map(d => ({ id: `dept_${d}`, name: d, type: 'Department', rawValue: d }));
+        const ous = (adMeta.ous || []).filter(o => o.toLowerCase().includes(q)).map(o => ({ id: `ou_${o}`, name: o, type: 'OU', rawValue: o }));
+        const groups = (adMeta.groups || []).filter(g => g.toLowerCase().includes(q)).map(g => ({ id: `group_${g}`, name: g, type: 'Group', rawValue: g }));
+        if (active) {
+          setUnifiedResults([...depts, ...ous, ...groups]);
+          setSearching(false);
+        }
+      } else {
+        // search or all
+        setSearching(true);
+        try {
+          const res = await searchDirectoryUsers({ query: debouncedQuery.trim() });
+          if (active && res.success) {
+            setUnifiedResults(res.data || []);
+          }
+        } catch (err) {
+          console.warn('Search error:', err.message);
+        } finally {
+          if (active) setSearching(false);
+        }
+      }
+    };
+    fetchResults();
+    return () => { active = false; };
+  }, [debouncedQuery, adMode, adMeta]);
+
+  // Update matched count for filter mode
   useEffect(() => {
     if (adMode === 'filter' && (selectedDepartments.length > 0 || selectedOus.length > 0 || selectedGroups.length > 0)) {
       updateCount();
@@ -128,19 +178,25 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
     }
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    setSearching(true);
-    try {
-      const res = await searchDirectoryUsers({ query: searchQuery.trim() });
-      if (res.success) {
-        setSearchResults(res.data || []);
-      }
-    } catch (err) {
-      console.warn('Search error:', err.message);
-    } finally {
-      setSearching(false);
+  // Selection handlers
+  const toggleFilterItem = (item) => {
+    if (item.type === 'Department') {
+      if (selectedDepartments.includes(item.rawValue)) setSelectedDepartments(selectedDepartments.filter(d => d !== item.rawValue));
+      else setSelectedDepartments([...selectedDepartments, item.rawValue]);
+    } else if (item.type === 'OU') {
+      if (selectedOus.includes(item.rawValue)) setSelectedOus(selectedOus.filter(d => d !== item.rawValue));
+      else setSelectedOus([...selectedOus, item.rawValue]);
+    } else if (item.type === 'Group') {
+      if (selectedGroups.includes(item.rawValue)) setSelectedGroups(selectedGroups.filter(d => d !== item.rawValue));
+      else setSelectedGroups([...selectedGroups, item.rawValue]);
     }
+  };
+
+  const isFilterItemSelected = (item) => {
+    if (item.type === 'Department') return selectedDepartments.includes(item.rawValue);
+    if (item.type === 'OU') return selectedOus.includes(item.rawValue);
+    if (item.type === 'Group') return selectedGroups.includes(item.rawValue);
+    return false;
   };
 
   const toggleEmail = (email) => {
@@ -152,13 +208,13 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
     }
   };
 
-  const selectAllSearchResults = () => {
-    const all = searchResults.map((u) => u.email.toLowerCase()).filter(Boolean);
+  const selectAllSearchEmails = () => {
+    const all = unifiedResults.map((u) => u.email?.toLowerCase()).filter(Boolean);
     setSelectedEmails(Array.from(new Set([...selectedEmails, ...all])));
   };
 
-  const deselectAllSearchResults = () => {
-    const set = new Set(searchResults.map((u) => u.email.toLowerCase()));
+  const deselectAllSearchEmails = () => {
+    const set = new Set(unifiedResults.map((u) => u.email?.toLowerCase()));
     setSelectedEmails(selectedEmails.filter((e) => !set.has(e)));
   };
 
@@ -171,6 +227,18 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
       selectedUserEmails: adMode === 'search' ? selectedEmails : [],
     };
     onImport(payload);
+  };
+
+  const handleChangePage = (event, newPage) => {
+    setPage(newPage);
+  };
+
+  const displayedResults = unifiedResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+  const getPlaceholder = () => {
+    if (adMode === 'filter') return "Search Departments, OUs, or Groups by name...";
+    if (adMode === 'search') return "Search users by name, username, or email...";
+    return "Search entire directory to preview users...";
   };
 
   return (
@@ -217,11 +285,15 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
           </Alert>
         ) : (
           <Box sx={{ mt: 1 }}>
-            <FormControl component="fieldset" sx={{ mb: 2.5, width: '100%' }}>
+            <FormControl component="fieldset" sx={{ mb: 2, width: '100%' }}>
               <RadioGroup
                 row
                 value={adMode}
-                onChange={(e) => setAdMode(e.target.value)}
+                onChange={(e) => {
+                  setAdMode(e.target.value);
+                  setSearchQuery('');
+                  setPage(0);
+                }}
                 sx={{
                   bgcolor: '#0b0f19',
                   p: 1,
@@ -248,217 +320,169 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
               </RadioGroup>
             </FormControl>
 
-            {/* Sub-Mode 1: Filter by Department / OU / Group */}
-            {adMode === 'filter' && (
-              <Grid container spacing={2}>
-                <Grid item xs={12}>
-                  <Autocomplete
-                    multiple
-                    options={adMeta.departments}
-                    value={selectedDepartments}
-                    onChange={(e, val) => setSelectedDepartments(val)}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        size="small"
-                        label="Filter by Departments (e.g. Finance, HR, IT)"
-                        placeholder="Select departments..."
-                      />
-                    )}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip
-                          {...getTagProps({ index })}
-                          key={option}
-                          size="small"
-                          label={option}
-                          icon={<BusinessIcon sx={{ fontSize: '0.9rem !important' }} />}
-                          sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 600 }}
-                        />
-                      ))
-                    }
-                  />
-                </Grid>
+            <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+              <TextField
+                fullWidth
+                size="small"
+                placeholder={getPlaceholder()}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                InputProps={{
+                  startAdornment: searching ? (
+                    <CircularProgress size={16} sx={{ color: '#3b82f6', mr: 1 }} />
+                  ) : (
+                    <SearchIcon sx={{ color: '#94a3b8', mr: 1, fontSize: 20 }} />
+                  )
+                }}
+              />
+            </Box>
 
-                <Grid item xs={12} sm={6}>
-                  <Autocomplete
-                    multiple
-                    options={adMeta.ous}
-                    value={selectedOus}
-                    onChange={(e, val) => setSelectedOus(val)}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        size="small"
-                        label="Filter by Organizational Units (OUs)"
-                        placeholder="Select OUs..."
-                      />
-                    )}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip
-                          {...getTagProps({ index })}
-                          key={option}
-                          size="small"
-                          label={option}
-                          icon={<FolderIcon sx={{ fontSize: '0.9rem !important' }} />}
-                          sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 600 }}
-                        />
-                      ))
-                    }
-                  />
-                </Grid>
-
-                <Grid item xs={12} sm={6}>
-                  <Autocomplete
-                    multiple
-                    options={adMeta.groups}
-                    value={selectedGroups}
-                    onChange={(e, val) => setSelectedGroups(val)}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        size="small"
-                        label="Filter by Security Groups"
-                        placeholder="Select groups..."
-                      />
-                    )}
-                    renderTags={(value, getTagProps) =>
-                      value.map((option, index) => (
-                        <Chip
-                          {...getTagProps({ index })}
-                          key={option}
-                          size="small"
-                          label={option}
-                          icon={<GroupsIcon sx={{ fontSize: '0.9rem !important' }} />}
-                          sx={{ bgcolor: 'rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontWeight: 600 }}
-                        />
-                      ))
-                    }
-                  />
-                </Grid>
-
-                <Grid item xs={12}>
-                  <Box sx={{ bgcolor: '#0b0f19', p: 1.5, borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                      Target preview matching selected criteria:
-                    </Typography>
-                    <Chip
+            <Box sx={{ bgcolor: '#0b0f19', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', p: 1 }}>
+              {/* Header and Controls */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, px: 1 }}>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700 }}>
+                  {unifiedResults.length} Results
+                  {adMode === 'search' && ` (${selectedEmails.length} Selected)`}
+                  {adMode === 'filter' && ` (${selectedDepartments.length + selectedOus.length + selectedGroups.length} Selected)`}
+                </Typography>
+                
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                  {adMode === 'search' && (
+                    <>
+                      <Button size="small" onClick={selectAllSearchEmails} sx={{ color: '#60a5fa', fontSize: '0.72rem' }}>
+                        Select All
+                      </Button>
+                      <Button size="small" onClick={deselectAllSearchEmails} sx={{ color: '#94a3b8', fontSize: '0.72rem' }}>
+                        Deselect All
+                      </Button>
+                    </>
+                  )}
+                  {adMode === 'all' && (
+                    <Button
                       size="small"
-                      label={checkingCount ? 'Calculating...' : `${matchedCount ?? 0} Matched Targets`}
-                      icon={<CheckCircleIcon sx={{ fontSize: '0.9rem !important' }} />}
-                      sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 700 }}
-                    />
-                  </Box>
-                </Grid>
-              </Grid>
-            )}
-
-            {/* Sub-Mode 2: Search & Pick Users */}
-            {adMode === 'search' && (
-              <Box>
-                <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    placeholder="Search by name, username, or email..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleSearch();
-                      }
-                    }}
-                  />
-                  <Button
-                    variant="outlined"
-                    onClick={handleSearch}
-                    disabled={searching || !searchQuery.trim()}
-                    startIcon={searching ? <CircularProgress size={14} sx={{ color: '#3b82f6' }} /> : <SearchIcon />}
-                    sx={{ borderColor: '#3b82f6', color: '#60a5fa', fontWeight: 600, px: 2.5, whiteSpace: 'nowrap' }}
-                  >
-                    {searching ? 'Searching...' : 'Search AD'}
-                  </Button>
+                      startIcon={syncingAd ? <CircularProgress size={14} sx={{ color: '#3b82f6' }} /> : <SyncIcon />}
+                      onClick={handleSyncAdNow}
+                      disabled={syncingAd}
+                      sx={{ color: '#60a5fa', fontSize: '0.72rem' }}
+                    >
+                      {syncingAd ? 'Syncing...' : 'Force Sync AD'}
+                    </Button>
+                  )}
                 </Box>
+              </Box>
 
-                {searchResults.length > 0 && (
-                  <Box sx={{ bgcolor: '#0b0f19', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', p: 1 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, px: 1 }}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700 }}>
-                        {searchResults.length} Results ({selectedEmails.length} Selected)
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Button size="small" onClick={selectAllSearchResults} sx={{ color: '#60a5fa', fontSize: '0.72rem' }}>
-                          Select All
-                        </Button>
-                        <Button size="small" onClick={deselectAllSearchResults} sx={{ color: '#94a3b8', fontSize: '0.72rem' }}>
-                          Deselect All
-                        </Button>
-                      </Box>
-                    </Box>
-
-                    <TableContainer sx={{ maxHeight: 200, overflowY: 'auto' }}>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell padding="checkbox"></TableCell>
-                            <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Name</TableCell>
-                            <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Email</TableCell>
-                            <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Department</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {searchResults.map((u, i) => {
-                            const isSelected = selectedEmails.includes(u.email.toLowerCase());
-                            return (
-                              <TableRow
-                                key={i}
-                                hover
-                                onClick={() => toggleEmail(u.email)}
-                                sx={{ cursor: 'pointer', bgcolor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent' }}
-                              >
+              <TableContainer sx={{ minHeight: 250, maxHeight: 350, overflowY: 'auto' }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      {adMode !== 'all' && <TableCell padding="checkbox" sx={{ bgcolor: '#0b0f19' }}></TableCell>}
+                      <TableCell sx={{ color: '#94a3b8', fontWeight: 700, bgcolor: '#0b0f19' }}>Name</TableCell>
+                      {adMode === 'filter' ? (
+                        <TableCell sx={{ color: '#94a3b8', fontWeight: 700, bgcolor: '#0b0f19' }}>Type</TableCell>
+                      ) : (
+                        <>
+                          <TableCell sx={{ color: '#94a3b8', fontWeight: 700, bgcolor: '#0b0f19' }}>Email</TableCell>
+                          <TableCell sx={{ color: '#94a3b8', fontWeight: 700, bgcolor: '#0b0f19' }}>Department</TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {displayedResults.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={adMode === 'filter' ? 3 : 4} align="center" sx={{ py: 4, color: '#94a3b8' }}>
+                          No results found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      displayedResults.map((item, i) => {
+                        if (adMode === 'filter') {
+                          const isSelected = isFilterItemSelected(item);
+                          return (
+                            <TableRow
+                              key={item.id}
+                              hover
+                              onClick={() => toggleFilterItem(item)}
+                              sx={{ cursor: 'pointer', bgcolor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent' }}
+                            >
+                              <TableCell padding="checkbox">
+                                <Checkbox checked={isSelected} size="small" sx={{ color: '#3b82f6' }} />
+                              </TableCell>
+                              <TableCell sx={{ color: '#f8fafc', fontWeight: 600 }}>{item.name}</TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  label={item.type}
+                                  icon={item.type === 'Department' ? <BusinessIcon sx={{ fontSize: '0.9rem !important' }} /> : item.type === 'OU' ? <FolderIcon sx={{ fontSize: '0.9rem !important' }} /> : <GroupsIcon sx={{ fontSize: '0.9rem !important' }} />}
+                                  sx={{ 
+                                    bgcolor: item.type === 'Department' ? 'rgba(59, 130, 246, 0.2)' : item.type === 'OU' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                                    color: item.type === 'Department' ? '#60a5fa' : item.type === 'OU' ? '#34d399' : '#fbbf24', 
+                                    fontWeight: 600 
+                                  }}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        } else {
+                          // search or all mode (users)
+                          const isSelected = adMode === 'all' ? false : selectedEmails.includes(item.email?.toLowerCase());
+                          return (
+                            <TableRow
+                              key={i}
+                              hover
+                              onClick={() => { if (adMode !== 'all' && item.email) toggleEmail(item.email); }}
+                              sx={{ cursor: adMode !== 'all' && item.email ? 'pointer' : 'default', bgcolor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'transparent' }}
+                            >
+                              {adMode !== 'all' && (
                                 <TableCell padding="checkbox">
-                                  <Checkbox checked={isSelected} size="small" sx={{ color: '#3b82f6' }} />
+                                  {item.email ? <Checkbox checked={isSelected} size="small" sx={{ color: '#3b82f6' }} /> : null}
                                 </TableCell>
-                                <TableCell sx={{ color: '#f8fafc', fontWeight: 600 }}>{u.firstName} {u.lastName}</TableCell>
-                                <TableCell sx={{ color: '#94a3b8' }}>{u.email}</TableCell>
-                                <TableCell sx={{ color: '#cbd5e1' }}>{u.department || 'General'}</TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  </Box>
-                )}
+                              )}
+                              <TableCell sx={{ color: '#f8fafc', fontWeight: 600 }}>{item.firstName} {item.lastName}</TableCell>
+                              <TableCell sx={{ color: '#94a3b8' }}>{item.email || 'N/A'}</TableCell>
+                              <TableCell sx={{ color: '#cbd5e1' }}>{item.department || 'General'}</TableCell>
+                            </TableRow>
+                          );
+                        }
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <TablePagination
+                component="div"
+                count={unifiedResults.length}
+                page={page}
+                onPageChange={handleChangePage}
+                rowsPerPage={rowsPerPage}
+                rowsPerPageOptions={[]} // Disable rows per page selector, hardcoded to 15
+                sx={{
+                  color: '#94a3b8',
+                  '.MuiTablePagination-selectLabel, .MuiTablePagination-input': { display: 'none' },
+                  '.MuiTablePagination-actions button': { color: '#60a5fa' },
+                }}
+              />
+            </Box>
+
+            {adMode === 'filter' && (
+              <Box sx={{ mt: 2, bgcolor: '#0b0f19', p: 1.5, borderRadius: '8px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                  Target preview matching selected criteria:
+                </Typography>
+                <Chip
+                  size="small"
+                  label={checkingCount ? 'Calculating...' : `${matchedCount ?? 0} Matched Targets`}
+                  icon={<CheckCircleIcon sx={{ fontSize: '0.9rem !important' }} />}
+                  sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 700 }}
+                />
               </Box>
             )}
-
-            {/* Sub-Mode 3: Entire Directory */}
+            
             {adMode === 'all' && (
-              <Box sx={{ bgcolor: '#0b0f19', p: 2.5, borderRadius: '10px', border: '1px solid rgba(59, 130, 246, 0.3)', textAlign: 'center' }}>
-                <BusinessIcon sx={{ fontSize: 36, color: '#3b82f6', mb: 0.5 }} />
-                <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700 }}>
-                  Entire Corporate Active Directory Target Pool
+              <Box sx={{ mt: 2, textAlign: 'center' }}>
+                <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                  This will append all synchronized domain users to this audience (duplicates skipped).
                 </Typography>
-                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5, mb: 1.5 }}>
-                  This will append all <strong>{adMeta.syncedCount}</strong> synchronized domain users to this audience (duplicates automatically skipped).
-                </Typography>
-                {adMeta.syncedCount > 0 ? (
-                  <Chip size="small" label={`${adMeta.syncedCount} Active Targets`} sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }} />
-                ) : (
-                  <Button
-                    size="small"
-                    variant="contained"
-                    startIcon={syncingAd ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <SyncIcon />}
-                    onClick={handleSyncAdNow}
-                    disabled={syncingAd}
-                    sx={{ bgcolor: '#3b82f6', color: '#fff', fontWeight: 700, borderRadius: '6px' }}
-                  >
-                    {syncingAd ? 'Pulling Users from AD...' : 'Sync Active Directory Now'}
-                  </Button>
-                )}
               </Box>
             )}
           </Box>
@@ -475,7 +499,7 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
             loading ||
             !adMeta.ldapEnabled ||
             (adMode === 'search' && selectedEmails.length === 0) ||
-            (adMode === 'filter' && matchedCount === 0)
+            (adMode === 'filter' && (selectedDepartments.length + selectedOus.length + selectedGroups.length) === 0)
           }
           sx={{
             bgcolor: '#3b82f6',
