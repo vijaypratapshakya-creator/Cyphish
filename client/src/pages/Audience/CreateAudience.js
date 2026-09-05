@@ -43,7 +43,8 @@ import Sidebar from '../../components/Sidebar';
 import Footer from '../../components/Footer';
 import { useNavigate } from 'react-router-dom';
 import { useAudience } from '../../hooks/useAudience';
-import { getDirectoryMetadata, queryDirectoryTargets, searchDirectoryUsers } from '../../services/systemService';
+import { getDirectoryMetadata, queryDirectoryTargets, searchDirectoryUsers, triggerDirectorySyncNow } from '../../services/systemService';
+import { Sync as SyncIcon } from '@mui/icons-material';
 
 const CreateAudience = () => {
   const [audienceName, setAudienceName] = useState('');
@@ -54,7 +55,9 @@ const CreateAudience = () => {
   const [file, setFile] = useState(null);
 
   // Active Directory Mode State
-  const [, setAdLoading] = useState(false);
+  const [adLoading, setAdLoading] = useState(false);
+  const [syncingAd, setSyncingAd] = useState(false);
+  const [adSyncMessage, setAdSyncMessage] = useState(null);
   const [adMeta, setAdMeta] = useState({ ldapEnabled: false, departments: [], ous: [], groups: [], syncedCount: 0 });
   const [adMode, setAdMode] = useState('filter'); // 'filter', 'search', 'all'
   
@@ -89,6 +92,22 @@ const CreateAudience = () => {
       console.warn('Failed to load directory metadata:', err.message);
     } finally {
       setAdLoading(false);
+    }
+  };
+
+  const handleSyncAdNow = async () => {
+    try {
+      setSyncingAd(true);
+      setAdSyncMessage(null);
+      const res = await triggerDirectorySyncNow();
+      if (res.success) {
+        setAdSyncMessage({ severity: 'success', text: res.message || 'Active Directory synchronization complete!' });
+        await loadDirectoryMetadata();
+      }
+    } catch (err) {
+      setAdSyncMessage({ severity: 'error', text: err.response?.data?.message || err.message || 'Directory synchronization failed.' });
+    } finally {
+      setSyncingAd(false);
     }
   };
 
@@ -378,6 +397,92 @@ const CreateAudience = () => {
                       </Alert>
                     ) : (
                       <Box>
+                        {/* AD Header Bar with Live Sync Button */}
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 1.5,
+                            bgcolor: '#0b0f19',
+                            p: 2,
+                            borderRadius: '12px',
+                            border: '1px solid rgba(255,255,255,0.06)',
+                            mb: 2.5,
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <BusinessIcon sx={{ color: '#3b82f6', fontSize: '1.6rem' }} />
+                            <Box>
+                              <Typography variant="body2" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                                Active Directory Connected
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                                {adMeta.syncedCount} targets synchronized • {adMeta.departments.length} Depts • {adMeta.ous.length} OUs
+                              </Typography>
+                            </Box>
+                          </Box>
+
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={syncingAd || adLoading ? <CircularProgress size={14} sx={{ color: '#3b82f6' }} /> : <SyncIcon />}
+                            onClick={handleSyncAdNow}
+                            disabled={syncingAd || adLoading}
+                            sx={{
+                              borderColor: 'rgba(59, 130, 246, 0.5)',
+                              color: '#60a5fa',
+                              fontWeight: 700,
+                              fontSize: '0.8rem',
+                              '&:hover': { bgcolor: 'rgba(59, 130, 246, 0.1)', borderColor: '#3b82f6' },
+                            }}
+                          >
+                            {syncingAd ? 'Synchronizing AD...' : 'Sync Active Directory Now'}
+                          </Button>
+                        </Box>
+
+                        {adSyncMessage && (
+                          <Alert
+                            severity={adSyncMessage.severity}
+                            onClose={() => setAdSyncMessage(null)}
+                            sx={{
+                              mb: 2.5,
+                              bgcolor: adSyncMessage.severity === 'success' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                              color: adSyncMessage.severity === 'success' ? '#34d399' : '#f87171',
+                              border: adSyncMessage.severity === 'success' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
+                            }}
+                          >
+                            {adSyncMessage.text}
+                          </Alert>
+                        )}
+
+                        {adMeta.syncedCount === 0 && !syncingAd && (
+                          <Alert
+                            severity="warning"
+                            sx={{
+                              mb: 2.5,
+                              bgcolor: 'rgba(245, 158, 11, 0.1)',
+                              color: '#fbbf24',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              borderRadius: '10px',
+                            }}
+                            action={
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<SyncIcon />}
+                                onClick={handleSyncAdNow}
+                                sx={{ bgcolor: '#f59e0b', color: '#000', fontWeight: 700, '&:hover': { bgcolor: '#d97706' } }}
+                              >
+                                Sync Now
+                              </Button>
+                            }
+                          >
+                            0 users are currently cached. Click "Sync Now" to pull all domain users and organizational units into CyPhish.
+                          </Alert>
+                        )}
+
                         {/* AD Import Sub-Mode Selector */}
                         <FormControl component="fieldset" sx={{ mb: 3, width: '100%' }}>
                           <RadioGroup
@@ -603,7 +708,20 @@ const CreateAudience = () => {
                             <Typography variant="body2" sx={{ color: '#94a3b8', maxWidth: 500, mx: 'auto', mt: 0.5, mb: 2 }}>
                               This will populate the audience with all <strong>{adMeta.syncedCount}</strong> employees currently synchronized from Active Directory.
                             </Typography>
-                            <Chip label={`${adMeta.syncedCount} Active Targets Ready`} sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }} />
+
+                            {adMeta.syncedCount > 0 ? (
+                              <Chip label={`${adMeta.syncedCount} Active Targets Ready`} sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }} />
+                            ) : (
+                              <Button
+                                variant="contained"
+                                startIcon={syncingAd ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <SyncIcon />}
+                                onClick={handleSyncAdNow}
+                                disabled={syncingAd}
+                                sx={{ bgcolor: '#3b82f6', color: '#fff', fontWeight: 700, borderRadius: '8px', mt: 1 }}
+                              >
+                                {syncingAd ? 'Pulling Users from AD...' : 'Sync Active Directory Now'}
+                              </Button>
+                            )}
                           </Box>
                         )}
                       </Box>

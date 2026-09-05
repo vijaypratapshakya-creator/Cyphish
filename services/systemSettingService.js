@@ -177,6 +177,13 @@ export async function updateSystemSettings(updateData, req = null) {
     console.warn('Directory scheduler reload warning:', err.message);
   }
 
+  // If LDAP was enabled and configured with credentials, trigger an immediate initial background sync
+  if (settings.ldap?.enabled && settings.ldap?.url && settings.ldap?.bindDN && settings.ldap?.baseDN) {
+    import('./ldapSyncService.js')
+      .then((m) => m.executeDirectorySync(req))
+      .catch((err) => console.warn('Background initial directory sync warning:', err.message));
+  }
+
   await audit({
     req,
     action: 'SYSTEM_SETTINGS_UPDATED',

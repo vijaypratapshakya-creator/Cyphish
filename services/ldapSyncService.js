@@ -66,6 +66,14 @@ export async function executeDirectorySync(req = null) {
           existingContact.company = adUser.company;
           modified = true;
         }
+        if (adUser.directoryDn && existingContact.directoryDn !== adUser.directoryDn) {
+          existingContact.directoryDn = adUser.directoryDn;
+          modified = true;
+        }
+        if (adUser.directoryGroups && Array.isArray(adUser.directoryGroups)) {
+          existingContact.directoryGroups = adUser.directoryGroups;
+          modified = true;
+        }
 
         existingContact.source = 'ldap';
         await existingContact.save();
@@ -83,6 +91,8 @@ export async function executeDirectorySync(req = null) {
           ou: adUser.ou || '',
           teamName: adUser.teamName || '',
           company: adUser.company || '',
+          directoryDn: adUser.directoryDn || '',
+          directoryGroups: adUser.directoryGroups || [],
           source: 'ldap',
         });
         createdCount++;

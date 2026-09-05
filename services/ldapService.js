@@ -4,6 +4,29 @@ import { getSystemSettings } from './systemSettingService.js';
 const escapeFilter = (value) =>
   String(value).replace(/[\\()*\0]/g, (char) => `\\${char.charCodeAt(0).toString(16).padStart(2, '0')}`);
 
+function getAttr(entry, ...names) {
+  if (!entry) return '';
+  for (const name of names) {
+    if (entry[name] !== undefined && entry[name] !== null && entry[name] !== '') {
+      return entry[name];
+    }
+    const lower = name.toLowerCase();
+    for (const key of Object.keys(entry)) {
+      if (key.toLowerCase() === lower && entry[key] !== undefined && entry[key] !== null && entry[key] !== '') {
+        return entry[key];
+      }
+    }
+  }
+  return '';
+}
+
+function deriveDomainFromBaseDn(baseDN) {
+  if (!baseDN) return 'corp.local';
+  const dcParts = baseDN.match(/DC=([^,]+)/gi);
+  if (!dcParts || dcParts.length === 0) return 'corp.local';
+  return dcParts.map((p) => p.replace(/DC=/i, '')).join('.');
+}
+
 function parseOuFromDn(dn) {
   if (!dn) return '';
   const ouMatches = dn.match(/OU=([^,]+)/gi);
@@ -152,6 +175,7 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
     bindDN: settings.ldap.bindDN,
     bindCredentials: settings.ldap.bindPassword,
     baseDN: settings.ldap.baseDN,
+    userFilter: settings.ldap.userFilter,
     timeout: Number(settings.ldap.timeout || 10000),
     enabled: settings.ldap.enabled,
   };
@@ -168,25 +192,30 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
   try {
     await bind(client, cfg);
     const base = scope === 'ou' && ouDn ? ouDn : cfg.baseDN;
-    const clauses = [
-      '(objectCategory=person)',
-      '(objectClass=user)',
-      '(!(userAccountControl:1.2.840.113556.1.4.803:=2))', // Exclude disabled accounts
-    ];
+    
+    // Build search filter:
+    // If user specified custom filter, use it; otherwise standard AD user filter
+    let baseUserFilter = cfg.userFilter && String(cfg.userFilter).trim()
+      ? String(cfg.userFilter).trim()
+      : '(&(objectCategory=person)(objectClass=user))';
+
+    const clauses = [baseUserFilter];
 
     if (scope === 'group' && groupDn) {
       clauses.push(`(memberOf=${escapeFilter(groupDn)})`);
     }
 
-    if (query) {
-      const value = escapeFilter(query);
-      clauses.push(`(|(displayName=*${value}*)(mail=*${value}*)(sAMAccountName=*${value}*)(userPrincipalName=*${value}*))`);
+    if (query && String(query).trim()) {
+      const value = escapeFilter(String(query).trim());
+      clauses.push(`(|(displayName=*${value}*)(mail=*${value}*)(sAMAccountName=*${value}*)(userPrincipalName=*${value}*)(cn=*${value}*)(name=*${value}*))`);
     }
 
+    const fullFilter = clauses.length === 1 ? clauses[0] : `(&${clauses.join('')})`;
+
     // Use RFC 2696 Simple Paged Results to support directories of any scale without SizeLimitExceededError
-    const entries = await search(client, base, {
+    let entries = await search(client, base, {
       scope: 'sub',
-      filter: `(&${clauses.join('')})`,
+      filter: fullFilter,
       attributes: [
         'displayName',
         'givenName',
@@ -201,6 +230,8 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
         'company',
         'distinguishedName',
         'memberOf',
+        'cn',
+        'name',
       ],
       paged: {
         pageSize: 500,
@@ -208,31 +239,69 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
       },
     });
 
+    // Fallback if 0 entries returned and no custom filter was set (e.g. non-AD LDAP like OpenLDAP / Samba)
+    if (entries.length === 0 && !cfg.userFilter && !query && scope === 'domain') {
+      try {
+        entries = await search(client, base, {
+          scope: 'sub',
+          filter: '(&(objectClass=user))',
+          paged: { pageSize: 500, pagePause: false },
+        });
+      } catch {}
+    }
+
+    const defaultDomain = deriveDomainFromBaseDn(cfg.baseDN);
+
     return entries
-      .filter((entry) => entry.mail || entry.userPrincipalName)
       .map((entry) => {
-        const mailAddress = String(entry.mail || entry.userPrincipalName || '').toLowerCase();
-        const dn = entry.distinguishedName || entry.dn || '';
+        const dn = getAttr(entry, 'distinguishedName', 'dn') || entry.dn || '';
+        const rawUsername = getAttr(entry, 'sAMAccountName', 'samaccountname', 'uid', 'cn') || '';
+        const rawMail = getAttr(entry, 'mail', 'email', 'userPrincipalName', 'userprincipalname');
+        
+        let email = '';
+        if (rawMail && String(rawMail).includes('@')) {
+          email = String(rawMail).toLowerCase().trim();
+        } else if (rawUsername) {
+          email = `${rawUsername.toLowerCase().trim()}@${defaultDomain}`;
+        } else if (dn) {
+          const cnMatch = dn.match(/^CN=([^,]+)/i);
+          if (cnMatch) {
+            email = `${cnMatch[1].toLowerCase().replace(/\s+/g, '.')}@${defaultDomain}`;
+          }
+        }
+
+        const firstName = getAttr(entry, 'givenName', 'givenname', 'displayName', 'displayname', 'name') || rawUsername || 'User';
+        const lastName = getAttr(entry, 'sn', 'surname') || '';
+        const username = rawUsername || (email ? email.split('@')[0] : '');
+        const role = getAttr(entry, 'title', 'role', 'description') || '';
+        const department = getAttr(entry, 'department', 'ou') || 'General';
+        const teamName = getAttr(entry, 'physicalDeliveryOfficeName', 'physicaldeliveryofficename', 'company', 'department') || '';
+        const company = getAttr(entry, 'company') || '';
+        const phoneNumber = getAttr(entry, 'telephoneNumber', 'telephonenumber', 'mobile') || '';
+        const rawMemberOf = getAttr(entry, 'memberOf', 'memberof');
+        const directoryGroups = Array.isArray(rawMemberOf)
+          ? rawMemberOf
+          : rawMemberOf
+          ? [rawMemberOf]
+          : [];
+
         return {
-          username: entry.sAMAccountName || mailAddress.split('@')[0] || '',
-          firstName: entry.givenName || entry.displayName || '',
-          lastName: entry.sn || '',
-          email: mailAddress,
-          phoneNumber: entry.telephoneNumber || '',
-          role: entry.title || '',
-          department: entry.department || 'General',
+          username,
+          firstName,
+          lastName,
+          email,
+          phoneNumber,
+          role,
+          department,
           ou: parseOuFromDn(dn),
-          teamName: entry.physicalDeliveryOfficeName || entry.department || '',
-          company: entry.company || '',
+          teamName,
+          company,
           directoryDn: dn,
-          directoryGroups: Array.isArray(entry.memberOf)
-            ? entry.memberOf
-            : entry.memberOf
-            ? [entry.memberOf]
-            : [],
+          directoryGroups,
           source: 'ldap',
         };
-      });
+      })
+      .filter((u) => u.email && u.email.includes('@'));
   } finally {
     try {
       client.destroy();
@@ -249,7 +318,22 @@ export async function getDirectoryMetadata() {
   // Import Contact dynamically or directly
   const { default: Contact } = await import('../models/Contact.js');
 
-  const syncedCount = await Contact.countDocuments({ source: 'ldap' });
+  let syncedCount = await Contact.countDocuments({ source: 'ldap' });
+
+  // If LDAP is enabled but 0 contacts are currently in the local database,
+  // trigger an automatic initial sync so users and OUs are populated seamlessly!
+  if (isEnabled && syncedCount === 0) {
+    try {
+      const { executeDirectorySync } = await import('./ldapSyncService.js');
+      const syncRes = await executeDirectorySync();
+      if (syncRes && syncRes.data && syncRes.data.syncedCount > 0) {
+        syncedCount = syncRes.data.syncedCount;
+      }
+    } catch (err) {
+      console.warn('Initial automatic directory sync attempt:', err.message);
+    }
+  }
+
   const totalContacts = await Contact.countDocuments({});
 
   const rawDepartments = await Contact.distinct('department', { source: 'ldap' });

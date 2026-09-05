@@ -32,14 +32,16 @@ import {
   Search as SearchIcon,
   CheckCircle as CheckCircleIcon,
   Settings as SettingsIcon,
+  Sync as SyncIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { getDirectoryMetadata, queryDirectoryTargets, searchDirectoryUsers } from '../services/systemService';
+import { getDirectoryMetadata, queryDirectoryTargets, searchDirectoryUsers, triggerDirectorySyncNow } from '../services/systemService';
 import { dialogPaperProps, gradientHeaderStyles } from '../utils/styles';
 
 const ADImportDialog = ({ open, onClose, onImport, loading }) => {
   const navigate = useNavigate();
   const [adLoading, setAdLoading] = useState(false);
+  const [syncingAd, setSyncingAd] = useState(false);
   const [adMeta, setAdMeta] = useState({ ldapEnabled: false, departments: [], ous: [], groups: [], syncedCount: 0 });
   const [adMode, setAdMode] = useState('filter'); // 'filter', 'search', 'all'
 
@@ -80,6 +82,20 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
       console.warn('Metadata load error:', err.message);
     } finally {
       setAdLoading(false);
+    }
+  };
+
+  const handleSyncAdNow = async () => {
+    try {
+      setSyncingAd(true);
+      const res = await triggerDirectorySyncNow();
+      if (res.success) {
+        await loadMeta();
+      }
+    } catch (err) {
+      console.warn('AD Sync error:', err.message);
+    } finally {
+      setSyncingAd(false);
     }
   };
 
@@ -429,7 +445,20 @@ const ADImportDialog = ({ open, onClose, onImport, loading }) => {
                 <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 0.5, mb: 1.5 }}>
                   This will append all <strong>{adMeta.syncedCount}</strong> synchronized domain users to this audience (duplicates automatically skipped).
                 </Typography>
-                <Chip size="small" label={`${adMeta.syncedCount} Active Targets`} sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }} />
+                {adMeta.syncedCount > 0 ? (
+                  <Chip size="small" label={`${adMeta.syncedCount} Active Targets`} sx={{ bgcolor: 'rgba(16, 185, 129, 0.2)', color: '#34d399', fontWeight: 700 }} />
+                ) : (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={syncingAd ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <SyncIcon />}
+                    onClick={handleSyncAdNow}
+                    disabled={syncingAd}
+                    sx={{ bgcolor: '#3b82f6', color: '#fff', fontWeight: 700, borderRadius: '6px' }}
+                  >
+                    {syncingAd ? 'Pulling Users from AD...' : 'Sync Active Directory Now'}
+                  </Button>
+                )}
               </Box>
             )}
           </Box>

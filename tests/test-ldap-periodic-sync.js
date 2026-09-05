@@ -49,7 +49,86 @@ const isSizeLimit = (err) =>
 
 assert.strictEqual(isSizeLimit(mockSizeLimitError), true, 'Should detect SizeLimitExceededError');
 assert.strictEqual(isSizeLimit(new Error('LDAP search failed with status 4')), true, 'Should detect status 4 error');
-console.log('   ✓ SizeLimitExceeded resiliency logic verified.\n');
+// 5. Test Case-Insensitive Attribute Extraction and Email Fallback
+console.log('5. Testing case-insensitive AD entry mapping & email fallback...');
+
+function extractMockAdUser(entry, baseDN = 'DC=cyphish,DC=local') {
+  function getAttr(e, ...names) {
+    if (!e) return '';
+    for (const name of names) {
+      if (e[name] !== undefined && e[name] !== null && e[name] !== '') return e[name];
+      const lower = name.toLowerCase();
+      for (const key of Object.keys(e)) {
+        if (key.toLowerCase() === lower && e[key] !== undefined && e[key] !== null && e[key] !== '') {
+          return e[key];
+        }
+      }
+    }
+    return '';
+  }
+
+  function deriveDomain(b) {
+    if (!b) return 'corp.local';
+    const dcParts = b.match(/DC=([^,]+)/gi);
+    if (!dcParts || dcParts.length === 0) return 'corp.local';
+    return dcParts.map((p) => p.replace(/DC=/i, '')).join('.');
+  }
+
+  const defaultDomain = deriveDomain(baseDN);
+  const dn = getAttr(entry, 'distinguishedName', 'dn') || entry.dn || '';
+  const rawUsername = getAttr(entry, 'sAMAccountName', 'samaccountname', 'uid', 'cn') || '';
+  const rawMail = getAttr(entry, 'mail', 'email', 'userPrincipalName', 'userprincipalname');
+  
+  let email = '';
+  if (rawMail && String(rawMail).includes('@')) {
+    email = String(rawMail).toLowerCase().trim();
+  } else if (rawUsername) {
+    email = `${rawUsername.toLowerCase().trim()}@${defaultDomain}`;
+  }
+
+  return {
+    username: rawUsername || (email ? email.split('@')[0] : ''),
+    firstName: getAttr(entry, 'givenName', 'givenname', 'displayName', 'displayname', 'name') || rawUsername || 'User',
+    lastName: getAttr(entry, 'sn', 'surname') || '',
+    email,
+    department: getAttr(entry, 'department', 'ou') || 'General',
+  };
+}
+
+// User 1: Fresh AD user with lowercase attributes and no explicit mail attribute
+const mockAdUser1 = {
+  dn: 'CN=Alice Smith,OU=Engineering,DC=cyphish,DC=local',
+  samaccountname: 'asmith',
+  givenname: 'Alice',
+  sn: 'Smith',
+  userprincipalname: 'asmith@cyphish.local',
+  department: 'Engineering',
+};
+const parsed1 = extractMockAdUser(mockAdUser1);
+assert.strictEqual(parsed1.email, 'asmith@cyphish.local', 'Should resolve email from userprincipalname');
+assert.strictEqual(parsed1.firstName, 'Alice', 'Should resolve givenname');
+assert.strictEqual(parsed1.lastName, 'Smith', 'Should resolve sn');
+
+// User 2: Fresh AD user with ONLY sAMAccountName (no mail, no UPN)
+const mockAdUser2 = {
+  dn: 'CN=Bob Jones,OU=Finance,DC=cyphish,DC=local',
+  samaccountname: 'bjones',
+  displayname: 'Bob Jones',
+};
+const parsed2 = extractMockAdUser(mockAdUser2, 'DC=cyphish,DC=local');
+assert.strictEqual(parsed2.email, 'bjones@cyphish.local', 'Should derive email from sAMAccountName + baseDN domain');
+assert.strictEqual(parsed2.firstName, 'Bob Jones', 'Should resolve firstName from displayname');
+
+// User 3: Standard user with explicit camelCase Mail
+const mockAdUser3 = {
+  sAMAccountName: 'charlie',
+  mail: 'charlie@company.com',
+  displayName: 'Charlie Brown',
+};
+const parsed3 = extractMockAdUser(mockAdUser3);
+assert.strictEqual(parsed3.email, 'charlie@company.com', 'Should resolve explicit mail');
+
+console.log('   ✓ Case-insensitive AD user extraction and domain fallback verified.\n');
 
 console.log('🎉 ALL ACTIVE DIRECTORY PERIODIC SYNC & PAGED SEARCH TESTS PASSED!\n');
 process.exit(0);
