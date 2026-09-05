@@ -238,36 +238,72 @@ export const startCampaign = async (req, res) => {
 };
 
 export const pauseCampaign = async (req, res) => {
-    const campaign = await Campaign.findById(req.params.id);
-    if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
-    if (campaign.status !== 'ongoing') return res.status(400).json({ success: false, message: 'Only an active campaign can be paused.' });
-    campaign.status = 'paused'; await campaign.save(); await audit({ req, action: 'campaign.paused', resourceType: 'campaign', resourceId: campaign._id });
-    res.json({ success: true, data: campaign });
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid campaign ID' });
+        }
+        const campaign = await Campaign.findById(id);
+        if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
+        if (campaign.status !== 'ongoing') return res.status(400).json({ success: false, message: 'Only an active campaign can be paused.' });
+        
+        campaign.status = 'paused';
+        await campaign.save();
+        await audit({ req, action: 'campaign.paused', resourceType: 'campaign', resourceId: campaign._id });
+        
+        res.json({ success: true, data: campaign });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
 
 export const resumeCampaign = async (req, res) => {
-    const campaign = await Campaign.findById(req.params.id);
-    if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
-    if (campaign.status !== 'paused') return res.status(400).json({ success: false, message: 'Only a paused campaign can be resumed.' });
-    campaign.status = 'approved'; await campaign.save(); await audit({ req, action: 'campaign.resumed', resourceType: 'campaign', resourceId: campaign._id });
-    res.json({ success: true, data: campaign });
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid campaign ID' });
+        }
+        const campaign = await Campaign.findById(id);
+        if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
+        if (campaign.status !== 'paused') return res.status(400).json({ success: false, message: 'Only a paused campaign can be resumed.' });
+        
+        campaign.status = 'approved';
+        await campaign.save();
+        await audit({ req, action: 'campaign.resumed', resourceType: 'campaign', resourceId: campaign._id });
+        
+        res.json({ success: true, data: campaign });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
 
 export const killCampaign = async (req, res) => {
-    const campaign = await Campaign.findById(req.params.id);
-    if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
-    if (['completed', 'archived', 'killed'].includes(campaign.status)) return res.status(400).json({ success: false, message: 'Campaign cannot be terminated in its current state.' });
-    campaign.status = 'killed'; campaign.killedAt = new Date(); campaign.killedBy = req.user._id; await campaign.save();
-    await CampaignTracking.updateMany({ campaign: campaign._id, status: 'pending' }, { status: 'disabled' });
-    await audit({ req, action: 'campaign.killed', resourceType: 'campaign', resourceId: campaign._id });
-    res.json({ success: true, data: campaign });
+    try {
+        const { id } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ success: false, message: 'Invalid campaign ID' });
+        }
+        const campaign = await Campaign.findById(id);
+        if (!campaign) return res.status(404).json({ success: false, message: 'Campaign not found' });
+        if (['completed', 'archived', 'killed'].includes(campaign.status)) return res.status(400).json({ success: false, message: 'Campaign cannot be terminated in its current state.' });
+        
+        campaign.status = 'killed';
+        campaign.killedAt = new Date();
+        campaign.killedBy = req.user._id;
+        await campaign.save();
+        
+        await CampaignTracking.updateMany({ campaign: campaign._id, status: 'pending' }, { status: 'disabled' });
+        await audit({ req, action: 'campaign.killed', resourceType: 'campaign', resourceId: campaign._id });
+        
+        res.json({ success: true, data: campaign });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
 
-// Rerun all failed emails for a campaign
 export const resendFailedEmails = async (req, res) => {
     try {
         const { id } = req.params;
-        const campaignId = new mongoose.Types.ObjectId(String(id));
 
         // Validate campaign ID format
         if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -276,6 +312,8 @@ export const resendFailedEmails = async (req, res) => {
                 message: 'Invalid campaign ID'
             });
         }
+        
+        const campaignId = new mongoose.Types.ObjectId(String(id));
 
         // Retrieve the campaign with populated fields
         const campaign = await Campaign.findById(id).populate('senderProfile template');
@@ -331,15 +369,16 @@ export const resendFailedEmails = async (req, res) => {
 export const archiveCampaign = async (req, res) => {
     try {
         const { id } = req.params;
-        const campaignId = new mongoose.Types.ObjectId(String(id));
 
         // Validate campaign ID format
-        if (!mongoose.Types.ObjectId.isValid(campaignId)) {
+        if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
                 success: false,
                 message: 'Invalid campaign ID',
             });
         }
+        
+        const campaignId = new mongoose.Types.ObjectId(String(id));
 
         // Fetch the campaign to validate its current status
         const campaign = await Campaign.findById(campaignId);
@@ -384,15 +423,16 @@ export const archiveCampaign = async (req, res) => {
 export const reactivateCampaign = async (req, res) => {
     try {
         const { id } = req.params;
-        const campaignId = new mongoose.Types.ObjectId(String(id)); // Convert to ObjectId
 
         // Validate campaign ID format
-        if (!mongoose.Types.ObjectId.isValid(campaignId)) {
+        if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({
                 success: false,
                 message: 'Invalid campaign ID',
             });
         }
+        
+        const campaignId = new mongoose.Types.ObjectId(String(id)); // Convert to ObjectId
 
         // Fetch the campaign to validate its current status
         const campaign = await Campaign.findById(campaignId);
@@ -438,6 +478,15 @@ export const reactivateCampaign = async (req, res) => {
 export const deleteCampaign = async (req, res) => {
     try {
         const { id } = req.params;
+
+        // Validate campaign ID format
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid campaign ID',
+            });
+        }
+        
         const campaignId = new mongoose.Types.ObjectId(String(id));
 
         // Find and delete the campaign

@@ -119,16 +119,18 @@ const parsed2 = extractMockAdUser(mockAdUser2, 'DC=cyphish,DC=local');
 assert.strictEqual(parsed2.email, 'bjones@cyphish.local', 'Should derive email from sAMAccountName + baseDN domain');
 assert.strictEqual(parsed2.firstName, 'Bob Jones', 'Should resolve firstName from displayname');
 
-// User 3: Standard user with explicit camelCase Mail
-const mockAdUser3 = {
-  sAMAccountName: 'charlie',
-  mail: 'charlie@company.com',
-  displayName: 'Charlie Brown',
+// User 4: AD user with an ldapjs.DN object (has .toString() but no native .match())
+const mockDnObject = {
+  toString: () => 'CN=DevOps Engineer,OU=Engineering,DC=cyphish,DC=local',
 };
-const parsed3 = extractMockAdUser(mockAdUser3);
-assert.strictEqual(parsed3.email, 'charlie@company.com', 'Should resolve explicit mail');
+const mockAdUser4 = {
+  dn: mockDnObject,
+  sAMAccountName: 'devops',
+};
+const parsed4 = extractMockAdUser(mockAdUser4, 'DC=cyphish,DC=local');
+assert.strictEqual(parsed4.email, 'devops@cyphish.local', 'Should handle DN object gracefully without calling .match() directly');
 
-console.log('   ✓ Case-insensitive AD user extraction and domain fallback verified.\n');
+console.log('   ✓ Case-insensitive AD user extraction, DN object handling, and domain fallback verified.\n');
 
 console.log('🎉 ALL ACTIVE DIRECTORY PERIODIC SYNC & PAGED SEARCH TESTS PASSED!\n');
 process.exit(0);

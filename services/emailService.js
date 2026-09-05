@@ -150,7 +150,7 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
             status: 'sent',
             lastAttempt: new Date(),
             deliveredAt: new Date(),
-            attemptCount: trackingEntry.attemptCount + 1,
+            attemptCount: (trackingEntry.attemptCount || 0) + 1,
             error: null,
         });
 
@@ -168,7 +168,7 @@ export const sendMultipleEmails = async (trackingEntry, senderProfile, template,
         await CampaignTracking.findByIdAndUpdate(trackingEntry._id, {
             status: 'failed',
             lastAttempt: new Date(),
-            attemptCount: trackingEntry.attemptCount + 1,
+            attemptCount: (trackingEntry.attemptCount || 0) + 1,
             error: error.message,
         });
 

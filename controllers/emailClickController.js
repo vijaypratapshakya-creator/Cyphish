@@ -6,7 +6,6 @@ const { ObjectId } = mongoose.Types;
 export const getEmailClicksByCampaign = async (req, res) => {
     try {
         const { id } = req.params;
-        console.log("req params", id);
 
         // Validate id
         if (!mongoose.Types.ObjectId.isValid(id)) {

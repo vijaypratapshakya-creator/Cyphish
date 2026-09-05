@@ -7,29 +7,59 @@ const escapeFilter = (value) =>
 function getAttr(entry, ...names) {
   if (!entry) return '';
   for (const name of names) {
-    if (entry[name] !== undefined && entry[name] !== null && entry[name] !== '') {
-      return entry[name];
+    const val = entry[name];
+    if (val !== undefined && val !== null && val !== '') {
+      if (Array.isArray(val)) return val.length > 0 ? (typeof val[0] === 'string' ? val[0] : (val[0]?.toString?.() || String(val[0]))) : '';
+      return typeof val === 'string' ? val : (typeof val.toString === 'function' ? val.toString() : String(val));
     }
     const lower = name.toLowerCase();
     for (const key of Object.keys(entry)) {
-      if (key.toLowerCase() === lower && entry[key] !== undefined && entry[key] !== null && entry[key] !== '') {
-        return entry[key];
+      if (key.toLowerCase() === lower) {
+        const kVal = entry[key];
+        if (kVal !== undefined && kVal !== null && kVal !== '') {
+          if (Array.isArray(kVal)) return kVal.length > 0 ? (typeof kVal[0] === 'string' ? kVal[0] : (kVal[0]?.toString?.() || String(kVal[0]))) : '';
+          return typeof kVal === 'string' ? kVal : (typeof kVal.toString === 'function' ? kVal.toString() : String(kVal));
+        }
       }
     }
   }
   return '';
 }
 
+function getAttrArray(entry, ...names) {
+  if (!entry) return [];
+  for (const name of names) {
+    const val = entry[name];
+    if (val !== undefined && val !== null && val !== '') {
+      const arr = Array.isArray(val) ? val : [val];
+      return arr.map((v) => (typeof v === 'string' ? v : (v?.toString?.() || String(v)))).filter(Boolean);
+    }
+    const lower = name.toLowerCase();
+    for (const key of Object.keys(entry)) {
+      if (key.toLowerCase() === lower) {
+        const kVal = entry[key];
+        if (kVal !== undefined && kVal !== null && kVal !== '') {
+          const arr = Array.isArray(kVal) ? kVal : [kVal];
+          return arr.map((v) => (typeof v === 'string' ? v : (v?.toString?.() || String(v)))).filter(Boolean);
+        }
+      }
+    }
+  }
+  return [];
+}
+
 function deriveDomainFromBaseDn(baseDN) {
   if (!baseDN) return 'corp.local';
-  const dcParts = baseDN.match(/DC=([^,]+)/gi);
+  const str = typeof baseDN === 'string' ? baseDN : (baseDN && typeof baseDN.toString === 'function' ? baseDN.toString() : String(baseDN));
+  const dcParts = str.match(/DC=([^,]+)/gi);
   if (!dcParts || dcParts.length === 0) return 'corp.local';
   return dcParts.map((p) => p.replace(/DC=/i, '')).join('.');
 }
 
 function parseOuFromDn(dn) {
   if (!dn) return '';
-  const ouMatches = dn.match(/OU=([^,]+)/gi);
+  const str = typeof dn === 'string' ? dn : (dn && typeof dn.toString === 'function' ? dn.toString() : String(dn));
+  const ouMatches = str.match(/OU=([^,]+)/gi);
   if (!ouMatches) return '';
   return ouMatches.map((m) => m.replace(/OU=/i, '')).join(' / ');
 }
@@ -61,7 +91,10 @@ function search(client, base, options) {
       if (error) return reject(error);
 
       result.on('searchEntry', (entry) => {
-        entries.push({ dn: entry.objectName, ...entry.object });
+        const rawDn = entry.objectName || entry.dn || '';
+        const entryDn = typeof rawDn === 'string' ? rawDn : (rawDn && typeof rawDn.toString === 'function' ? rawDn.toString() : String(rawDn || ''));
+        const rawObj = entry.object || {};
+        entries.push({ ...rawObj, dn: entryDn });
       });
 
       result.on('error', (err) => {
@@ -254,7 +287,8 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
 
     return entries
       .map((entry) => {
-        const dn = getAttr(entry, 'distinguishedName', 'dn') || entry.dn || '';
+        const rawDn = getAttr(entry, 'distinguishedName', 'dn') || entry.dn || '';
+        const dn = typeof rawDn === 'string' ? rawDn : (rawDn && typeof rawDn.toString === 'function' ? rawDn.toString() : String(rawDn || ''));
         const rawUsername = getAttr(entry, 'sAMAccountName', 'samaccountname', 'uid', 'cn') || '';
         const rawMail = getAttr(entry, 'mail', 'email', 'userPrincipalName', 'userprincipalname');
         
@@ -278,12 +312,7 @@ export async function findDirectoryUsers({ scope = 'domain', query = '', groupDn
         const teamName = getAttr(entry, 'physicalDeliveryOfficeName', 'physicaldeliveryofficename', 'company', 'department') || '';
         const company = getAttr(entry, 'company') || '';
         const phoneNumber = getAttr(entry, 'telephoneNumber', 'telephonenumber', 'mobile') || '';
-        const rawMemberOf = getAttr(entry, 'memberOf', 'memberof');
-        const directoryGroups = Array.isArray(rawMemberOf)
-          ? rawMemberOf
-          : rawMemberOf
-          ? [rawMemberOf]
-          : [];
+        const directoryGroups = getAttrArray(entry, 'memberOf', 'memberof');
 
         return {
           username,
@@ -347,8 +376,9 @@ export async function getDirectoryMetadata() {
   const groups = rawGroups
     .filter(Boolean)
     .map((g) => {
-      const match = g.match(/^CN=([^,]+)/i);
-      return match ? match[1] : g;
+      const gStr = typeof g === 'string' ? g : (g && typeof g.toString === 'function' ? g.toString() : String(g || ''));
+      const match = gStr.match(/^CN=([^,]+)/i);
+      return match ? match[1] : gStr;
     })
     .filter((v, i, a) => a.indexOf(v) === i)
     .sort();
