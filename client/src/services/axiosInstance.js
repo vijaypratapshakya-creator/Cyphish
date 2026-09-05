@@ -6,6 +6,11 @@ import { clearToken, getToken } from '../utils/tokenManager';
 
 const axiosInstance = axios.create({
     baseURL: API_BASE_URL,
+    headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+    }
 });
 
 axiosInstance.interceptors.request.use(
