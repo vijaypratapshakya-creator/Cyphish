@@ -90,12 +90,17 @@ function search(client, base, options) {
     client.search(base, options, (error, result) => {
       if (error) return reject(error);
 
-      result.on('searchEntry', (entry) => {
-        const rawDn = entry.objectName || entry.dn || '';
-        const entryDn = typeof rawDn === 'string' ? rawDn : (rawDn && typeof rawDn.toString === 'function' ? rawDn.toString() : String(rawDn || ''));
-        const rawObj = entry.object || {};
-        entries.push({ ...rawObj, dn: entryDn });
-      });
+        result.on('searchEntry', (entry) => {
+          const rawDn = entry.objectName || entry.dn || '';
+          const entryDn = typeof rawDn === 'string' ? rawDn : (rawDn && typeof rawDn.toString === 'function' ? rawDn.toString() : String(rawDn || ''));
+          const rawObj = {};
+          if (entry.attributes && Array.isArray(entry.attributes)) {
+            entry.attributes.forEach((attr) => {
+              if (attr.type) rawObj[attr.type] = attr.values || attr.vals || [];
+            });
+          }
+          entries.push({ ...rawObj, dn: entryDn });
+        });
 
       result.on('error', (err) => {
         if (isSettled) return;
