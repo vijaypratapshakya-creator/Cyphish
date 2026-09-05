@@ -280,7 +280,7 @@ const AudienceDetail = () => {
     };
 
     return (
-        <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: "#f0f4f7" }}>
+        <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: "#0b0f19" }}>
             <Sidebar />
             <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                 <Container maxWidth="lg" sx={{ flexGrow: 1, mt: '96px', mb: 2 }}>
@@ -289,19 +289,19 @@ const AudienceDetail = () => {
                             <Typography 
                                 sx={{ 
                                     mb: 1, 
-                                    fontWeight: 500,
-                                    background: 'linear-gradient(45deg, #1976d2, #42a5f5)',
-                                    backgroundClip: 'text',
-                                    WebkitBackgroundClip: 'text',
-                                    WebkitTextFillColor: 'transparent',
-                                    fontSize: { xs: '1.2rem', md: '1.5rem' }
+                                    fontWeight: 700,
+                                    fontSize: { xs: '1.4rem', md: '1.8rem' },
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 1.5,
+                                    color: '#f8fafc'
                                 }} 
                                 variant="h4" 
-                                color="primary"
                             >
+                                <Group sx={{ color: '#3b82f6', fontSize: '2rem' }} />
                                 Audience Details
                             </Typography>
-                            <Typography sx={{ fontSize: '0.8rem' }} color="text.secondary">
+                            <Typography sx={{ fontSize: '0.8rem', color: '#94a3b8' }}>
                                 View details of your selected audience and associated contacts.
                             </Typography>
                         </Grid>
@@ -311,6 +311,7 @@ const AudienceDetail = () => {
                                 aria-controls="audience-options-menu"
                                 aria-haspopup="true"
                                 onClick={handleMenuOpen}
+                                sx={{ color: '#94a3b8' }}
                             >
                                 <MoreVertIcon />
                             </IconButton>
@@ -329,7 +330,7 @@ const AudienceDetail = () => {
                                 }}
                             >
                                 <MenuItem onClick={() => { handleMenuClose(); setOpenADDialog(true); }}>
-                                    <BusinessIcon fontSize="small" sx={{ mr: 1, color: '#1976d2' }} />
+                                    <BusinessIcon fontSize="small" sx={{ mr: 1, color: '#3b82f6' }} />
                                     Import from Active Directory
                                 </MenuItem>
                                 <MenuItem onClick={() => setOpenCSVDialog(true)}>
@@ -337,7 +338,7 @@ const AudienceDetail = () => {
                                     Upload CSV
                                 </MenuItem>
                                 <MenuItem onClick={() => setOpenDeleteDialog(true)}>
-                                    <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
+                                    <DeleteIcon fontSize="small" sx={{ mr: 1, color: '#ef4444' }} />
                                     Delete Audience
                                 </MenuItem>
                             </Menu>
@@ -352,7 +353,6 @@ const AudienceDetail = () => {
                             sx={{ 
                                 mb: 3,
                                 borderRadius: '8px',
-                                borderWidth: '1px',
                                 '& .MuiAlert-icon': {
                                     fontSize: '1.25rem'
                                 }
@@ -363,13 +363,14 @@ const AudienceDetail = () => {
                     )}
 
                     <Card sx={{ 
-                        backgroundColor: "#ffffff", 
+                        backgroundColor: "#111827", 
                         borderRadius: '16px',
-                        border: '1px solid rgba(0, 0, 0, 0.08)',
-                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.2)',
                         transition: 'all 0.2s ease-in-out',
                         '&:hover': {
-                            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.1)'
+                            boxShadow: '0 4px 16px rgba(59, 130, 246, 0.15)',
+                            borderColor: 'rgba(59, 130, 246, 0.3)'
                         }
                     }}>
                         <CardContent sx={{ p: 3 }}>
@@ -384,8 +385,8 @@ const AudienceDetail = () => {
                                                 width: '48px',
                                                 height: '48px',
                                                 borderRadius: '12px',
-                                                backgroundColor: 'primary.main',
-                                                color: 'white'
+                                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                                color: '#3b82f6'
                                             }}>
                                                 <Group sx={{ fontSize: '1.5rem' }} />
                                             </Box>
@@ -393,13 +394,13 @@ const AudienceDetail = () => {
                                         <Grid sx={{ maxWidth: '85%' }} item>
                                             <Typography 
                                                 variant="subtitle2" 
-                                                color="text.secondary"
                                                 sx={{ 
-                                                    fontWeight: 500,
+                                                    fontWeight: 600,
                                                     textTransform: 'uppercase',
                                                     letterSpacing: '0.5px',
                                                     fontSize: '0.75rem',
-                                                    mb: 0.5
+                                                    mb: 0.5,
+                                                    color: '#94a3b8'
                                                 }}
                                             >
                                                 Audience Name
@@ -407,19 +408,19 @@ const AudienceDetail = () => {
                                             <Typography
                                                 variant="h6"
                                                 sx={{
-                                                    fontWeight: 500,
+                                                    fontWeight: 700,
                                                     whiteSpace: 'nowrap',
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
                                                     maxWidth: '100%',
                                                     display: 'block',
-                                                    color: '#1a1a1a',
+                                                    color: '#f8fafc',
                                                     fontSize: '1.25rem'
                                                 }}
                                             >
                                                 {loading ? (
                                                     <Box component="span" sx={{ 
-                                                        color: 'text.secondary',
+                                                        color: '#94a3b8',
                                                         fontWeight: 400,
                                                         fontSize: '0.875rem'
                                                     }}>
@@ -441,8 +442,8 @@ const AudienceDetail = () => {
                                                 width: '48px',
                                                 height: '48px',
                                                 borderRadius: '12px',
-                                                backgroundColor: 'primary.main',
-                                                color: 'white'
+                                                backgroundColor: 'rgba(6, 182, 212, 0.1)',
+                                                color: '#06b6d4'
                                             }}>
                                                 <Person sx={{ fontSize: '1.5rem' }} />
                                             </Box>
@@ -450,13 +451,13 @@ const AudienceDetail = () => {
                                         <Grid item>
                                             <Typography 
                                                 variant="subtitle2" 
-                                                color="text.secondary"
                                                 sx={{ 
-                                                    fontWeight: 500,
+                                                    fontWeight: 600,
                                                     textTransform: 'uppercase',
                                                     letterSpacing: '0.5px',
                                                     fontSize: '0.75rem',
-                                                    mb: 0.5
+                                                    mb: 0.5,
+                                                    color: '#94a3b8'
                                                 }}
                                             >
                                                 Contacts
@@ -464,14 +465,14 @@ const AudienceDetail = () => {
                                             <Typography 
                                                 variant="h6" 
                                                 sx={{ 
-                                                    fontWeight: 500,
-                                                    color: 'primary.main',
+                                                    fontWeight: 700,
+                                                    color: '#06b6d4',
                                                     fontSize: '1.5rem'
                                                 }}
                                             >
                                                 {loading ? (
                                                     <Box component="span" sx={{ 
-                                                        color: 'text.secondary',
+                                                        color: '#94a3b8',
                                                         fontWeight: 400,
                                                         fontSize: '0.875rem'
                                                     }}>
@@ -487,18 +488,18 @@ const AudienceDetail = () => {
                         </CardContent>
                     </Card>
 
-                    <Divider sx={{ my: 3 }} />
+                    <Divider sx={{ my: 3, borderColor: 'rgba(255, 255, 255, 0.08)' }} />
 
                     <Box sx={{ mb: 3 }}>
                         <Grid container spacing={2} alignItems="flex-start">
                             <Grid item xs={12} md={8}>
                                 <Typography 
-                                    color='primary' 
                                     variant="h6"
                                     sx={{ 
-                                        fontWeight: 500,
-                                        fontSize: { xs: '1rem', md: '1.5rem' },
-                                        mb: 0.5
+                                        fontWeight: 700,
+                                        fontSize: { xs: '1.2rem', md: '1.5rem' },
+                                        mb: 0.5,
+                                        color: '#f8fafc'
                                     }}
                                 >
                                     Contact List
@@ -506,10 +507,9 @@ const AudienceDetail = () => {
                                 <Typography 
                                     sx={{ 
                                         fontSize: '0.8rem',
-                                        color: 'text.secondary',
+                                        color: '#94a3b8',
                                         lineHeight: 1.4
                                     }} 
-                                    color="text.secondary"
                                 >
                                     Manage contacts associated with this audience.
                                 </Typography>
@@ -528,16 +528,11 @@ const AudienceDetail = () => {
                                     sx={{
                                         borderRadius: '8px',
                                         textTransform: 'none',
-                                        fontWeight: 500,
+                                        fontWeight: 600,
                                         px: { xs: 1.5, md: 2 },
                                         py: { xs: 0.5, md: 0.75 },
                                         fontSize: { xs: '0.8rem', md: '0.875rem' },
-                                        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                                         mr: 1.5,
-                                        '&:hover': {
-                                            transform: 'translateY(-1px)'
-                                        },
-                                        transition: 'all 0.2s ease-in-out'
                                     }}
                                 >
                                     Import from AD
@@ -550,17 +545,11 @@ const AudienceDetail = () => {
                                     sx={{
                                         borderRadius: '8px',
                                         textTransform: 'none',
-                                        fontWeight: 500,
+                                        fontWeight: 600,
                                         px: { xs: 1.5, md: 2 },
                                         py: { xs: 0.5, md: 0.75 },
                                         fontSize: { xs: '0.8rem', md: '0.875rem' },
                                         width: { xs: 'auto', md: 'auto' },
-                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                                        '&:hover': {
-                                            boxShadow: '0 4px 8px rgba(0,0,0,0.15)',
-                                            transform: 'translateY(-1px)'
-                                        },
-                                        transition: 'all 0.2s ease-in-out'
                                     }}
                                 >
                                     Add Contact
